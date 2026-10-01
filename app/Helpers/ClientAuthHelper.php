@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use App\Models\Client;
 use App\Models\ClientStatus;
 use Illuminate\Support\Facades\Hash;
+use App\Events\ClientRegistered;
 use App\Models\ClientSession;
 
 class ClientAuthHelper
@@ -69,18 +70,25 @@ class ClientAuthHelper
 
             }
 
-            // DispatchEventCreated::dispatch(
-            //    dispEveId: (string) \Str::uuid(),
-            //    dispId: 'NON',
-            //    refId: $user->acc_id,
-            //   title: "New " . $user->account_type . " registered",
-            //   description: "New dealer " . $user->full_name . " with email" . $user->email . " registered",
-            //   metaData: [
-            //      "user_id" => $user->acc_id,
-            //      "status" => $state->name,
-            //  ],
-            //  tag: "Registration"
-            // );
+            if ($user) {
+                ClientRegistered::dispatch([
+                    'client_id' => $user->client_id,
+
+                    'email' => $user->email,
+
+                    'first_name' => $user->first_name,
+
+                    'last_name' => $user->last_name,
+
+                    'account_type' => $user->account_type,
+
+                    'sender_id' => 'SYSTEM-' . now()->format('Y-m-d-H-i-s'),
+
+                    'mail_id' => 'MAIL-' . strtoupper(Str::uuid()),
+
+                    'message' => 'Your registration has been successfully completed.',
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

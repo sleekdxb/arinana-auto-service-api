@@ -35,7 +35,7 @@ class ClientAuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
+            'email' => 'required|email|exists:clients,email',
             'password' => 'required|string|min:8',
             'fcm_token' => 'nullable|string',
         ]);
