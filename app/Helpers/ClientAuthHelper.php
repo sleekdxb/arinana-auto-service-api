@@ -10,6 +10,7 @@ use App\Models\ClientStatus;
 use Illuminate\Support\Facades\Hash;
 use App\Events\ClientRegistered;
 use App\Models\ClientSession;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class ClientAuthHelper
 {
@@ -124,7 +125,7 @@ class ClientAuthHelper
         try {
 
             $emailHash = hash('sha256', $request->email);
-            $user = User::where('hashed_email', $emailHash)->first();
+            $user = Client::where('hashed_email', $emailHash)->first();
             if (!$user) {
                 return response()->json([
                     'success' => false,
@@ -146,7 +147,7 @@ class ClientAuthHelper
             $expirationTime = now()->addDays(7);
             $currentDeviceKey = md5($request->ip() . $request->header('User-Agent'));
 
-            $existingSessions = Session::where('acc_id', $user->acc_id)->get();
+            $existingSessions = ClientSession::where('client_id', $user->client_id)->get();
             $isFirstLogin = $existingSessions->isEmpty();
 
             /*
@@ -169,7 +170,7 @@ class ClientAuthHelper
 
                     if (!empty($payload['otp_pending']) && $payload['otp_pending'] === true) {
 
-                        $sessions = Session::where('acc_id', $user->acc_id)->get();
+                        $sessions = ClientSession::where('client_id', $user->client_id)->get();
                         $fcmTokens = $sessions->pluck('fcm_token')->filter()->unique()->values()->toArray();
                         if ($sessions && $fcmTokens) {
 
@@ -183,8 +184,9 @@ class ClientAuthHelper
                             'message' => 'OTP verification required for this device',
                             'data' => [
                                 'user' => [
-                                    'acc_id' => $user->acc_id,
-                                    'full_name' => $user->full_name,
+                                    'client_id' => $user->client_id,
+                                    'first_name' => $user->first_name,
+                                    'last_name' => $user->last_name,
                                     'email' => $user->email,
                                     'account_type' => $user->account_type,
                                     'state' => $state,
@@ -221,8 +223,9 @@ class ClientAuthHelper
                         'message' => 'Session refreshed on this device',
                         'data' => [
                             'user' => [
-                                'acc_id' => $user->acc_id,
-                                'full_name' => $user->full_name,
+                                'client_id' => $user->client_id,
+                                'first_name' => $user->first_name,
+                                'last_name' => $user->last_name,
                                 'email' => $user->email,
                                 'account_type' => $user->account_type,
                                 'state' => $state,
@@ -243,7 +246,7 @@ class ClientAuthHelper
             */
 
             if (!$isFirstLogin && !$otpVerified) {
-                $sessions = Session::where('acc_id', $request->acc_id)->get();
+                $sessions = ClientSession::where('client_id', $request->client_id)->get();
 
                 $fcmTokens = $sessions
                     ->pluck('fcm_token')
@@ -258,9 +261,9 @@ class ClientAuthHelper
                     'exp' => $expirationTime->timestamp
                 ])->fromUser($user);
 
-                $session = Session::create([
+                $session = ClientSession::create([
                     'session_id' => 'SESS_' . strtoupper(Str::random(18)),
-                    'acc_id' => $user->acc_id,
+                    'client_id' => $user->client_id,
                     'ip_address' => $request->ip(),
                     'user_agent' => $request->header('User-Agent'),
                     'payload' => json_encode([
@@ -281,7 +284,8 @@ class ClientAuthHelper
                     'data' => [
                         'user' => [
                             'client_id' => $user->client_id,
-                            'full_name' => $user->full_name,
+                            'first_name' => $user->first_name,
+                            'last_name' => $user->last_name,
                             'email' => $user->email,
                             'account_type' => $user->account_type,
                             'state' => $state,
@@ -304,9 +308,9 @@ class ClientAuthHelper
                 'exp' => $expirationTime->timestamp
             ])->fromUser($user);
 
-            $session = Session::create([
+            $session = ClientSession::create([
                 'session_id' => 'SESS_' . strtoupper(Str::random(18)),
-                'acc_id' => $user->acc_id,
+                'client_id' => $user->client_id,
                 'ip_address' => $request->ip(),
                 'user_agent' => $request->header('User-Agent'),
                 'payload' => json_encode([
@@ -326,8 +330,9 @@ class ClientAuthHelper
                 'message' => 'Login successful',
                 'data' => [
                     'user' => [
-                        'acc_id' => $user->acc_id,
-                        'full_name' => $user->full_name,
+                        'client_id' => $user->client_id,
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
                         'email' => $user->email,
                         'account_type' => $user->account_type,
                         'state' => $state,
@@ -361,8 +366,8 @@ class ClientAuthHelper
         $emailHash = hash('sha256', $email);
 
         // Find the user by hashed_email
-        $user = User::where('hashed_email', $emailHash)->first();
-        $sessions = Session::where('acc_id', $user->acc_id)->get();
+        $user = Client::where('hashed_email', $emailHash)->first();
+        $sessions = ClientSession::where('client_id', $user->client_id)->get();
 
         $fcmTokens = $sessions
             ->pluck('fcm_token')
@@ -404,7 +409,7 @@ class ClientAuthHelper
 
             // 2. Delete the Session from Database
             $sessionId = $request->input('session_id');
-            $deleted = Session::where('session_id', $sessionId)->delete();
+            $deleted = ClientSession::where('session_id', $sessionId)->delete();
 
             if (!$deleted) {
                 return response()->json([

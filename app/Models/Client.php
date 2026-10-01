@@ -2,9 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Tymon\JWTAuth\Contracts\JWTSubject;
 
-class Client extends Model
+class Client extends Authenticatable implements JWTSubject
 {
     protected $fillable = [
         'client_id',
@@ -29,6 +30,25 @@ class Client extends Model
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+        ];
+    }
+
+    /**
+     * Get the identifier that will be stored in the JWT.
+     */
+    public function getJWTIdentifier()
+    {
+        return $this->getKey();
+    }
+
+    /**
+     * Custom claims to include in the JWT.
+     */
+    public function getJWTCustomClaims(): array
+    {
+        return [
+            'client_id' => $this->client_id,
+            'account_type' => $this->account_type,
         ];
     }
 }
