@@ -51,6 +51,8 @@ class ClientAuthHelper
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'phone' => $request->phone,
+                'business_name' => $request->business_name ?? null,
+                'registration_number' => $request->registration_number ?? null,
                 'hashed_email' => $emailHash,
                 'state_id' => $state_id,
                 'account_type' => $request->account_type,
@@ -58,7 +60,6 @@ class ClientAuthHelper
             ]);
 
             if ($user) {
-
                 $state = ClientStatus::create([
                     'client_id' => $client_id,
                     'state_id' => $state_id,
@@ -66,27 +67,18 @@ class ClientAuthHelper
                     'code' => 'ACTIVE421',
                     'note' => 'Account approved',
                 ]);
-
                 //  Update user with state_id
-
             }
 
             if ($user) {
                 ClientRegistered::dispatch([
                     'client_id' => $user->client_id,
-
                     'email' => $user->email,
-
                     'first_name' => $user->first_name,
-
                     'last_name' => $user->last_name,
-
                     'account_type' => $user->account_type,
-
                     'sender_id' => 'SYSTEM-' . now()->format('Y-m-d-H-i-s'),
-
                     'mail_id' => 'MAIL-' . strtoupper(Str::uuid()),
-
                     'message' => 'Your registration has been successfully completed.',
                 ]);
             }
