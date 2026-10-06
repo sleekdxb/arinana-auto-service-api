@@ -443,4 +443,44 @@ class ClientAuthHelper
     }
 
 
+    public static function updateProfile(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $allowedFields = [
+            'email',
+            'account_type',
+            'first_name',
+            'last_name',
+            'phone',
+        ];
+
+        // Get only allowed fields
+        $data = $request->only($allowedFields);
+
+        // Remove fields that are null or empty
+        $data = array_filter($data, function ($value) {
+            return $value !== null && $value !== '';
+        });
+
+        // Update only existing and non-empty fields
+        if (!empty($data)) {
+            $client->update($data);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+
+
 }

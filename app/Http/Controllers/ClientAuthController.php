@@ -106,4 +106,26 @@ class ClientAuthController extends Controller
 
         return ClientAuthHelper::getProfile($request);
     }
+
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+            'email' => 'required|email',
+            'account_type' => 'required|string',
+            'first_name' => 'required|string',
+            'last_name' => 'required|string',
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::updateProfile($request);
+    }
 }
