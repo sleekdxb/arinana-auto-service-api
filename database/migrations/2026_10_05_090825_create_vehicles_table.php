@@ -16,7 +16,7 @@ return new class extends Migration {
 
             // Unique vehicle identifier
             $table->string('veh_id')->unique();
-
+            $table->string('client_id')->index();
             // Vehicle information
             $table->string('make')->index();
             $table->string('model')->index();
