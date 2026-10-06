@@ -30,7 +30,7 @@ class Vehicle extends Model
 
     public function files()
     {
-        return $this->hasMany(VehicleFile::class, 'client_id', 'client_id'); // vend_id is the foreign key
+        return $this->hasMany(VehicleFile::class, 'veh_id', 'veh_id'); // veh_id is the foreign key
     }
 
 }

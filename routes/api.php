@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ClientAuthController;
 use App\Http\Controllers\OtpController;
 use App\Http\Controllers\VehicleController;
-
+use App\Http\Controllers\FileUploadController;
 
 
 //->middleware('verify.token')
@@ -35,6 +35,11 @@ Route::prefix('vehicles')->group(function () {
     Route::put('/updateVehicle', [VehicleController::class, 'updateVehicle']);
     Route::delete('/deleteVehicle', [VehicleController::class, 'deleteVehicle']);
 });
+
+Route::prefix('media')->group(function () {
+    Route::post('/uploadFiles', [FileUploadController::class, 'uploadFiles']);
+});
+
 
 
 

@@ -4,6 +4,7 @@ namespace App\Helpers;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use App\Models\Client;
 use App\Models\ClientFile;
 use App\Models\VehicleFile;
 use App\Models\ClientFileStatus;
@@ -186,7 +187,7 @@ class FileUploadHelper
                 -------------------------------- */
 
                 if (str_starts_with($target, 'vehicle')) {
-                    $entry['vehicle_id'] = $proId ?? $refId;
+                    $entry['veh_id'] = $proId ?? $refId;
                 }
 
                 /* --------------------------------
@@ -255,9 +256,9 @@ class FileUploadHelper
 
             if (str_starts_with($target, 'account')) {
 
-                $upload = AccountFile::create($entry);
+                $upload = ClientFile::create($entry);
 
-                $state = AccountFileState::create([
+                $state = ClientFileStatus::create([
                     'file_id' => $entry['file_id'],
                     'state' => 'uploaded',
                     'code' => 'UPLOADED471',
@@ -321,7 +322,7 @@ class FileUploadHelper
             in_array($target, ['account', 'account_update']) &&
             $profileImageUrl
         ) {
-            User::where('acc_id', $refId)
+            Client::where('client_id', $refId)
                 ->update([
                     'profile_img' => $profileImageUrl
                 ]);

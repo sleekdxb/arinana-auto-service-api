@@ -11,7 +11,7 @@ use Carbon\Carbon;
 class FileUploadController extends Controller
 {
 
-    public function upload(Request $request): JsonResponse
+    public function uploadFiles(Request $request): JsonResponse
     {
         // Step 0: Parse uploadProtocol if it's a JSON string
         if (is_string($request->input('uploadProtocol'))) {

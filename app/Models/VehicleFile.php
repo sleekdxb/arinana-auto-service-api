@@ -13,7 +13,6 @@ class VehicleFile extends Model
 
     protected $fillable = [
         'veh_id',
-        'client_id',
         'file_name',
         'file_size',
         'file_type',
