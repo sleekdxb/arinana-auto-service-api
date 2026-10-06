@@ -9,6 +9,25 @@ use App\Helpers\VehicleHelper;
 
 class VehicleController extends Controller
 {
+
+    public function getVehicle(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return VehicleHelper::getVehicle($request);
+    }
+
+
+
     public function addVehicle(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [

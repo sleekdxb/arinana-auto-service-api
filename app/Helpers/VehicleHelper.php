@@ -10,11 +10,28 @@ use App\Models\Vehicle;
 
 
 
-
-
-
 class VehicleHelper
 {
+    public static function getVehicle(Request $request): JsonResponse
+    {
+        $vehicles = Vehicle::with('files')->where('client_id', $request->client_id)
+            ->orderBy('id', 'desc')
+            ->get();
+
+        if ($vehicles->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No vehicles found for this client.',
+                'data' => [],
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Vehicles retrieved successfully.',
+            'data' => $vehicles,
+        ], 200);
+    }
 
 
     public static function addVehicle(Request $request): JsonResponse
