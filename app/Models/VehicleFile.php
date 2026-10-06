@@ -5,14 +5,14 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class BookingFile extends Model
+class VehicleFile extends Model
 {
     use HasFactory;
 
-    protected $table = 'booking_files';
+    protected $table = 'vehicle_files';
 
     protected $fillable = [
-        'book_id',
+        'veh_id',
         'client_id',
         'file_name',
         'file_size',
@@ -25,14 +25,14 @@ class BookingFile extends Model
     ];
 
     /**
-     * Booking relationship
+     * Vehicle relationship
      */
-    public function booking()
+    public function vehicle()
     {
         return $this->belongsTo(
-            Booking::class,
-            'book_id',
-            'book_id'
+            Vehicle::class,
+            'veh_id',
+            'veh_id'
         );
     }
 
@@ -47,5 +47,6 @@ class BookingFile extends Model
             'id'
         );
     }
+
 }
 

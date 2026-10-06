@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('booking_file_states', function (Blueprint $table) {
+        Schema::create('client_file_states', function (Blueprint $table) {
             $table->id();
             $table->timestamps();
         });
@@ -22,6 +22,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('booking_file_states');
+        Schema::dropIfExists('client_file_states');
     }
 };

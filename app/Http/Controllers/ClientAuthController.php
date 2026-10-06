@@ -88,4 +88,22 @@ class ClientAuthController extends Controller
         return ClientAuthHelper::logout($request);
     }
 
+
+
+
+
+    public function getProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::getProfile($request);
+    }
 }

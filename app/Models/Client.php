@@ -27,6 +27,22 @@ class Client extends Authenticatable implements JWTSubject
         'remember_token',
     ];
 
+
+
+    public function files()
+    {
+        return $this->hasMany(ClientFile::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+    public function sessions()
+    {
+        return $this->hasMany(ClientSession::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
+    public function status()
+    {
+        return $this->hasMany(ClientStatus::class, 'state_id', 'state_id'); // vend_id is the foreign key
+    }
+
     protected function casts(): array
     {
         return [

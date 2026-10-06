@@ -21,6 +21,17 @@ return new class extends Migration {
             $table->timestamps();
             $table->index(['veh_id', 'file_type']);
         });
+
+
+        Schema::create('vehicle_file_states', function (Blueprint $table) {
+            $table->id();
+            $table->string('file_id')->index();
+            $table->string('team_id')->nullable()->index();
+            $table->string('state');
+            $table->string('code')->nullable();
+            $table->timestamp('create_at')->nullable();
+            $table->timestamp('update_at')->nullable();
+        });
     }
 
     /**
@@ -29,5 +40,7 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::dropIfExists('vehicle_files');
+        Schema::dropIfExists('vehicle_file_states');
+
     }
 };

@@ -6,7 +6,7 @@ use Illuminate\Support\Str;
 use Carbon\Carbon;
 use App\Models\ClientFile;
 use App\Models\VehicleFile;
-use App\Models\ClientFileState;
+use App\Models\ClientFileStatus;
 use App\Models\VehicleFileState;
 use App\Models\BookingFile;
 use App\Models\BookingFileState;

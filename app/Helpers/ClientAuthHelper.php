@@ -425,4 +425,22 @@ class ClientAuthHelper
         }
     }
 
+    public static function getProfile(Request $request): JsonResponse
+    {
+        $client = Client::with(['status', 'sessions', 'files'])->where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $client,
+        ]);
+    }
+
+
 }
