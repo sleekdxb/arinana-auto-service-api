@@ -18,6 +18,8 @@ return new class extends Migration {
             $table->string('first_name');
             $table->string('last_name');
             $table->string('account_type')->index();
+            $table->string('business_name')->nullable();
+            $table->string('registration_number')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->string(column: 'phone')->unique()->index();
             $table->string('state_id')->index();

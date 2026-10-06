@@ -51,6 +51,8 @@ class ClientAuthHelper
                 'last_name' => $request->last_name,
                 'email' => $request->email,
                 'phone' => $request->phone,
+                'business_name' => $request->business_name ?? null,
+                'registration_number' => $request->registration_number ?? null,
                 'hashed_email' => $emailHash,
                 'state_id' => $state_id,
                 'account_type' => $request->account_type,
@@ -58,7 +60,6 @@ class ClientAuthHelper
             ]);
 
             if ($user) {
-
                 $state = ClientStatus::create([
                     'client_id' => $client_id,
                     'state_id' => $state_id,
@@ -66,27 +67,18 @@ class ClientAuthHelper
                     'code' => 'ACTIVE421',
                     'note' => 'Account approved',
                 ]);
-
                 //  Update user with state_id
-
             }
 
             if ($user) {
                 ClientRegistered::dispatch([
                     'client_id' => $user->client_id,
-
                     'email' => $user->email,
-
                     'first_name' => $user->first_name,
-
                     'last_name' => $user->last_name,
-
                     'account_type' => $user->account_type,
-
                     'sender_id' => 'SYSTEM-' . now()->format('Y-m-d-H-i-s'),
-
                     'mail_id' => 'MAIL-' . strtoupper(Str::uuid()),
-
                     'message' => 'Your registration has been successfully completed.',
                 ]);
             }
@@ -432,5 +424,63 @@ class ClientAuthHelper
             ], 500);
         }
     }
+
+    public static function getProfile(Request $request): JsonResponse
+    {
+        $client = Client::with(['status', 'sessions', 'files'])->where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $client,
+        ]);
+    }
+
+
+    public static function updateProfile(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $allowedFields = [
+            'email',
+            'account_type',
+            'first_name',
+            'last_name',
+            'phone',
+        ];
+
+        // Get only allowed fields
+        $data = $request->only($allowedFields);
+
+        // Remove fields that are null or empty
+        $data = array_filter($data, function ($value) {
+            return $value !== null && $value !== '';
+        });
+
+        // Update only existing and non-empty fields
+        if (!empty($data)) {
+            $client->update($data);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+
 
 }
