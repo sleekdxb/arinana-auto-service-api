@@ -7,7 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Http\JsonResponse;
 use App\Models\Vehicle;
-
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 
 class VehicleHelper
@@ -100,4 +101,78 @@ class VehicleHelper
             'data' => $vehicle->fresh(),
         ], 200);
     }
+
+
+
+
+
+    public static function deleteVehicle($request)
+    {
+        try {
+            DB::beginTransaction();
+
+            $vehId = $request->veh_id;
+
+            $vehicle = Vehicle::where('veh_id', $vehId)->first();
+
+            if (!$vehicle) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vehicle not found.',
+                ], 404);
+            }
+
+            // Get all files linked to this vehicle
+            $vehicleFiles = $vehicle->files;
+
+            foreach ($vehicleFiles as $vehicleFile) {
+
+                // Delete physical file
+                if (!empty($vehicleFile->file_url)) {
+                    self::deleteFileFromStorage($vehicleFile->file_url);
+                }
+
+                // Delete vehicle_files record
+                $vehicleFile->delete();
+            }
+
+            // Delete vehicle record
+            $vehicle->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Vehicle and linked files deleted successfully.',
+            ], 200);
+
+        } catch (\Throwable $e) {
+
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete vehicle.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    private static function deleteFileFromStorage(string $fileUrl): void
+    {
+        if (str_contains($fileUrl, '/storage/')) {
+            $filePath = substr($fileUrl, strpos($fileUrl, '/storage/') + 9);
+        } else {
+            $filePath = ltrim($fileUrl, '/');
+        }
+        // Delete from the public disk
+        if (Storage::disk('public')->exists($filePath)) {
+            Storage::disk('public')->delete($filePath);
+        }
+    }
+
+
 }

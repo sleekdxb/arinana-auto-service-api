@@ -6,6 +6,7 @@ use App\Http\Controllers\ClientAuthController;
 use App\Http\Controllers\OtpController;
 use App\Http\Controllers\VehicleController;
 use App\Http\Controllers\FileUploadController;
+use App\Http\Controllers\BookingController;
 
 
 //->middleware('verify.token')
@@ -21,7 +22,7 @@ Route::prefix('client')->group(function () {
 });
 
 
-
+// Two Factor Authentication Endpoints
 Route::prefix('twoFactor')->group(function () {
     Route::post('/generateOtp', [OtpController::class, 'generateOtp']);
     Route::post('/verifyOtp', [OtpController::class, 'verifyOtp']);
@@ -36,8 +37,18 @@ Route::prefix('vehicles')->group(function () {
     Route::delete('/deleteVehicle', [VehicleController::class, 'deleteVehicle']);
 });
 
+
+// Media Upload Endpoints
 Route::prefix('media')->group(function () {
     Route::post('/uploadFiles', [FileUploadController::class, 'uploadFiles']);
+});
+
+
+Route::prefix('booking')->group(function () {
+    Route::post('/addBooking', [BookingController::class, 'addBooking']);
+    Route::put('/updateBooking', [BookingController::class, 'updateBooking']);
+    Route::delete('/deleteBooking', [BookingController::class, 'deleteBooking']);
+    Route::get('/getClientBookings', [BookingController::class, 'getClientBookings']);
 });
 
 
