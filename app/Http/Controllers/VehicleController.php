@@ -70,6 +70,24 @@ class VehicleController extends Controller
 
         return VehicleHelper::updateVehicle($request);
     }
+
+
+
+    public function deleteVehicle(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'veh_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return VehicleHelper::deleteVehicle($request);
+    }
 }
 
 
