@@ -88,6 +88,23 @@ class VehicleController extends Controller
 
         return VehicleHelper::deleteVehicle($request);
     }
+
+
+    public function getClientBookings(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return VehicleHelper::getClientBookings($request);
+    }
 }
 
 
