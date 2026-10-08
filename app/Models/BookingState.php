@@ -5,38 +5,23 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
-class BookingFileState extends Model
+class BookingState extends Model
 {
     use HasFactory;
 
-    protected $table = 'booking_file_states';
-
-    public $timestamps = false;
+    protected $table = 'booking_statuses';
 
     protected $fillable = [
-        'file_id',
+        'book_id',
         'team_id',
-        'state',
+        'state_id',
+        'name',
         'code',
-        'create_at',
-        'update_at',
+        'note',
     ];
 
-    protected $casts = [
-        'create_at' => 'datetime',
-        'update_at' => 'datetime',
-    ];
 
-    /**
-     * Booking file relationship
-     */
-    public function file()
-    {
-        return $this->belongsTo(
-            BookingFile::class,
-            'file_id',
-            'file_id'
-        );
-    }
+
+
 }
 
