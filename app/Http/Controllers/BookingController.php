@@ -76,7 +76,7 @@ class BookingController extends Controller
     public function getClientBookings(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'client_id' => 'required|email|exists:clients,client_id',
+            'client_id' => 'required|string|exists:clients,client_id',
         ]);
 
         if ($validator->fails()) {

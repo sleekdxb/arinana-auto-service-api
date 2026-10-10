@@ -25,4 +25,20 @@ class Booking extends Model
         'date' => 'date',
         'time' => 'datetime:H:i',
     ];
+
+
+    public function files()
+    {
+        return $this->hasMany(BookingFile::class, 'book_id', 'book_id'); // book_id is the foreign key
+    }
+    public function state()
+    {
+        return $this->belongsTo(BookingState::class, 'state_id', 'state_id'); // state_id is the foreign key
+    }
+
+
+    public function vehicle()
+    {
+        return $this->hasMany(Vehicle::class, 'veh_id', 'veh_id'); // veh_id is the foreign key
+    }
 }

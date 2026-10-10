@@ -9,7 +9,7 @@ use Illuminate\Http\JsonResponse;
 use App\Models\Vehicle;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-
+use App\Models\Booking;
 
 class VehicleHelper
 {
@@ -173,6 +173,7 @@ class VehicleHelper
             Storage::disk('public')->delete($filePath);
         }
     }
+
 
 
 }

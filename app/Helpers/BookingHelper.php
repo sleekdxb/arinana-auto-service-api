@@ -6,6 +6,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 use App\Models\Booking;
 use App\Models\BookingState;
+use App\Models\BookingFile;
+use App\Models\Vehicle;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
@@ -136,6 +139,91 @@ class BookingHelper
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update booking.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    public static function deleteBooking(Request $request): JsonResponse
+    {
+        DB::beginTransaction();
+
+        try {
+            $booking = Booking::where('book_id', $request->book_id)->first();
+
+            if (!$booking) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Booking not found.'
+                ], 404);
+            }
+
+            // Get all files belonging to the booking
+            $files = BookingFile::where('book_id', $booking->book_id)->get();
+
+            foreach ($files as $file) {
+                if (!empty($file->file_url)) {
+                    $filePath = public_path($file->file_url);
+
+                    if (File::exists($filePath)) {
+                        File::delete($filePath);
+                    }
+                }
+            }
+
+            // Delete booking files from database
+            BookingFile::where('book_id', $booking->book_id)->delete();
+
+
+
+            // Delete booking
+            $booking->delete();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking deleted successfully.'
+            ], 200);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete booking.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public static function getClientBookings(Request $request): JsonResponse
+    {
+        try {
+            $bookings = Booking::where('client_id', $request->client_id)
+                ->with([
+                    'files',
+                    'state'
+                ])
+                ->latest()
+                ->get();
+
+            foreach ($bookings as $booking) {
+                $vehicleIds = json_decode($booking->vehicle_ids, true) ?? [];
+
+                $booking->vehicles = Vehicle::whereIn('veh_id', $vehicleIds)->get();
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $bookings,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get client bookings.',
                 'error' => $e->getMessage(),
             ], 500);
         }
