@@ -281,5 +281,23 @@ class TeamAuthHelper
             'message' => 'Password has been reset successfully'
         ], 200);
     }
+    public static function getProfile(Request $request): JsonResponse
+    {
+        $team = Team::with(['sessions'])
+            ->where('team_id', $request->team_id)
+            ->first();
+
+        if (!$team) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Team member not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $team,
+        ], 200);
+    }
 
 }

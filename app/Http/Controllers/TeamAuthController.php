@@ -62,4 +62,19 @@ class TeamAuthController extends Controller
 
         return TeamAuthHelper::reset_password($request);
     }
+
+    public function getProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamAuthHelper::getProfile($request);
+    }
 }
