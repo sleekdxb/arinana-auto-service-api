@@ -58,6 +58,7 @@ Route::prefix('teamAuth')->group(function () {
     Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
     Route::post('/logout', [TeamAuthController::class, 'logout']);
     Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
+    Route::put('/updateProfile', [TeamAuthController::class, 'updateProfile']);
 });
 
 Route::prefix('team')->group(function () {
@@ -65,6 +66,7 @@ Route::prefix('team')->group(function () {
     Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
     Route::post('/logout', [TeamAuthController::class, 'logout']);
     Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
+
 });
 
 

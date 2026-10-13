@@ -77,4 +77,25 @@ class TeamAuthController extends Controller
 
         return TeamAuthHelper::getProfile($request);
     }
+
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string',
+            'email' => 'required|email',
+            'full_name' => 'required|string',
+            'phone' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamAuthHelper::updateProfile($request);
+    }
+
 }

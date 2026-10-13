@@ -281,6 +281,8 @@ class TeamAuthHelper
             'message' => 'Password has been reset successfully'
         ], 200);
     }
+
+
     public static function getProfile(Request $request): JsonResponse
     {
         $team = Team::with(['sessions'])
@@ -300,4 +302,48 @@ class TeamAuthHelper
         ], 200);
     }
 
+
+
+    public static function updateProfile(Request $request): JsonResponse
+    {
+        $team = Team::where('team_id', $request->team_id)->first();
+
+        if (!$team) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Team member not found.',
+            ], 404);
+        }
+
+        $allowedFields = [
+            'email',
+            'full_name',
+            'phone',
+        ];
+
+        // Get only allowed fields from the request
+        $data = $request->only($allowedFields);
+
+        // Ignore null and empty values
+        $data = array_filter($data, function ($value) {
+            return $value !== null && $value !== '';
+        });
+
+        // Normalize email and update its hash
+        if (isset($data['email'])) {
+            $data['email'] = strtolower($data['email']);
+            $data['hashed_email'] = hash('sha256', $data['email']);
+        }
+
+        // Update only the provided, non-empty fields
+        if (!empty($data)) {
+            $team->update($data);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully.',
+            'data' => $team->fresh(),
+        ], 200);
+    }
 }
