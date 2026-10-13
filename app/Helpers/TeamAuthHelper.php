@@ -256,7 +256,30 @@ class TeamAuthHelper
         }
     }
 
+    public static function reset_password(Request $request): JsonResponse
+    {
+        $user = Team::where('team_id', $request->team_id)->first();
 
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Team member not found'
+            ], 404);
+        }
 
+        $user->password = Hash::make($request->password);
+
+        if (!$user->save()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to reset password'
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password has been reset successfully'
+        ], 200);
+    }
 
 }
