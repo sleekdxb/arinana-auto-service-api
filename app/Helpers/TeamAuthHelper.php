@@ -215,4 +215,48 @@ class TeamAuthHelper
 
 
 
+    public static function logout(Request $request): JsonResponse
+    {
+        try {
+            // 1. Invalidate the JWT token
+            if ($token = JWTAuth::getToken()) {
+                JWTAuth::invalidate($token);
+            }
+
+            // 2. Delete the team session
+            $sessionId = $request->input('session_id');
+
+            $deleted = TeamSession::where('session_id', $sessionId)
+                ->delete();
+
+            if (!$deleted) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session not found or already deleted'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Logged out successfully'
+            ], 200);
+
+        } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error during logout'
+            ], 500);
+        } catch (\Exception $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error during logout'
+            ], 500);
+        }
+    }
+
+
+
+
 }

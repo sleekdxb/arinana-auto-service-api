@@ -26,4 +26,40 @@ class TeamAuthController extends Controller
         return TeamAuthHelper::login($request);
     }
 
+
+    public function logout(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'session_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamAuthHelper::logout($request);
+    }
+
+
+
+    public function reset_password(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+            'password' => 'required|string|min:8',
+            'confirm_password' => 'required|string|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamAuthHelper::reset_password($request);
+    }
 }
