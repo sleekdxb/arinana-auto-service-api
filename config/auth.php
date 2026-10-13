@@ -42,6 +42,10 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'team' => [
+            'driver' => 'jwt',
+            'provider' => 'teams',
+        ],
     ],
 
     /*
@@ -65,6 +69,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'teams' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Team::class,
         ],
 
         // 'users' => [
