@@ -8,6 +8,7 @@ use App\Http\Controllers\VehicleController;
 use App\Http\Controllers\FileUploadController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\TeamAuthController;
+use App\Http\Controllers\TeamStatisticController;
 
 
 //->middleware('verify.token')
@@ -62,11 +63,7 @@ Route::prefix('teamAuth')->group(function () {
 });
 
 Route::prefix('team')->group(function () {
-    Route::post('/login', [TeamAuthController::class, 'login']);
-    Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
-    Route::post('/logout', [TeamAuthController::class, 'logout']);
-    Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
-
+    Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
 });
 
 

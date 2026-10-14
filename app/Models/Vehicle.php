@@ -32,6 +32,14 @@ class Vehicle extends Model
     {
         return $this->hasMany(VehicleFile::class, 'veh_id', 'veh_id'); // veh_id is the foreign key
     }
+    public function state()
+    {
+        return $this->belongsTo(VehicleState::class, 'state_id', 'state_id'); // state_id is the foreign key
+    }
 
+    public function booking()
+    {
+        return $this->belongsTo(Booking::class);
+    }
 }
 

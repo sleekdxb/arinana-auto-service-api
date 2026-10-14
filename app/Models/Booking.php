@@ -41,4 +41,10 @@ class Booking extends Model
     {
         return $this->hasMany(Vehicle::class, 'veh_id', 'veh_id'); // veh_id is the foreign key
     }
+
+    public function customer()
+    {
+        return $this->belongsTo(Client::class, 'client_id', 'client_id'); // client_id is the foreign key
+    }
+
 }
