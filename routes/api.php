@@ -9,6 +9,7 @@ use App\Http\Controllers\FileUploadController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\TeamAuthController;
 use App\Http\Controllers\TeamStatisticController;
+use App\Http\Controllers\TeamController;
 
 
 //->middleware('verify.token')
@@ -64,6 +65,7 @@ Route::prefix('teamAuth')->group(function () {
 
 Route::prefix('team')->group(function () {
     Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
+    Route::put('/setBookingFileState', [TeamController::class, 'setBookingFileState']);
 });
 
 
