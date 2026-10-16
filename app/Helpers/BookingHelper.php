@@ -8,6 +8,7 @@ use App\Models\Booking;
 use App\Models\BookingState;
 use App\Models\BookingFile;
 use App\Models\Vehicle;
+use App\Models\BookingFileState;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -227,5 +228,36 @@ class BookingHelper
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+
+    public static function setBookingFileState(Request $request): JsonResponse
+    {
+        return DB::transaction(function () use ($request) {
+
+            // Find the booking file
+            $file = BookingFile::findOrFail($request->file_id);
+
+            // Generate a unique state ID
+            do {
+                $stateId = 'STATE-' . strtoupper(Str::random(8));
+            } while (BookingFileState::where('code', $stateId)->exists());
+
+            // Create the file state
+            $state = BookingFileState::create([
+                'file_id' => $file->id,
+                'team_id' => $request->team_id,
+                'state' => $request->name,
+                'code' => $stateId,
+                'create_at' => now(),
+                'update_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking file state created successfully.',
+                'data' => $state,
+            ], 201);
+        });
     }
 }
