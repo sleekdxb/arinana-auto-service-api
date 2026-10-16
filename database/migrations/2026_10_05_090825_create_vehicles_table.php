@@ -29,13 +29,26 @@ return new class extends Migration {
             // Vehicle details
             $table->unsignedBigInteger('mileage')->default(0)->index();
             $table->string('color')->index();
-
+            $table->string('state_id')->nullable()->index();
             $table->timestamps();
 
             // Composite indexes for common filtering
             $table->index(['make', 'model']);
             $table->index(['make', 'model', 'year']);
             $table->index(['plate_number', 'make']);
+        });
+
+
+        Schema::create('vehicle_statuses', function (Blueprint $table) {
+            $table->id(); // auto increment
+            $table->string('veh_id')->index();
+            $table->string('team_id')->nullable()->index();
+            $table->string('state_id')->unique();
+            $table->string('name')->index();
+            $table->string('code')->index();
+            $table->text('note')->nullable();
+            $table->timestamps();
+            $table->index(['veh_id', 'code']);
         });
 
 
@@ -47,5 +60,6 @@ return new class extends Migration {
     public function down(): void
     {
         Schema::dropIfExists('vehicles');
+        Schema::dropIfExists('vehicle_statuses');
     }
 };

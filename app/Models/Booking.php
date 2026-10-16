@@ -24,6 +24,7 @@ class Booking extends Model
     protected $casts = [
         'date' => 'date',
         'time' => 'datetime:H:i',
+        'vehicle_ids' => 'array'
     ];
 
 
@@ -39,7 +40,16 @@ class Booking extends Model
 
     public function vehicle()
     {
-        return $this->hasMany(Vehicle::class, 'veh_id', 'veh_id'); // veh_id is the foreign key
+        $vehicleIds = $this->vehicle_ids;
+
+        if (is_string($vehicleIds)) {
+            $vehicleIds = json_decode($vehicleIds, true);
+        }
+
+        $vehicleIds = array_unique($vehicleIds ?? []);
+
+        return Vehicle::query()
+            ->whereIn('veh_id', $vehicleIds);
     }
 
     public function customer()
