@@ -10,6 +10,7 @@ use App\Models\Vehicle;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Booking;
+use App\Models\VehicleState;
 
 class VehicleHelper
 {
@@ -37,27 +38,53 @@ class VehicleHelper
 
     public static function addVehicle(Request $request): JsonResponse
     {
-        // Generate unique vehicle ID
-        do {
-            $vehId = 'VEHICLE-' . strtoupper(Str::random(8));
-        } while (Vehicle::where('veh_id', $vehId)->exists());
+        $result = DB::transaction(function () use ($request) {
 
-        $vehicle = Vehicle::create([
-            'veh_id' => $vehId,
-            'client_id' => $request->client_id,
-            'make' => $request->make,
-            'model' => $request->model,
-            'year' => $request->year,
-            'vin' => strtoupper($request->vin),
-            'plate_number' => strtoupper($request->plate_number),
-            'mileage' => $request->mileage ?? 0,
-            'color' => $request->color,
-        ]);
+            // Generate unique vehicle ID
+            do {
+                $vehId = 'VEHICLE-' . strtoupper(Str::random(8));
+            } while (Vehicle::where('veh_id', $vehId)->exists());
+
+            // Generate unique state ID
+            do {
+                $stateId = 'STATE-' . strtoupper(Str::random(8));
+            } while (VehicleState::where('state_id', $stateId)->exists());
+
+            // Create vehicle
+            $vehicle = Vehicle::create([
+                'veh_id' => $vehId,
+                'client_id' => $request->client_id,
+                'make' => $request->make,
+                'model' => $request->model,
+                'year' => $request->year,
+                'vin' => strtoupper($request->vin),
+                'plate_number' => strtoupper($request->plate_number),
+                'mileage' => $request->mileage ?? 0,
+                'color' => $request->color,
+                'state_id' => $stateId,
+            ]);
+
+            // Create initial vehicle state
+            $state = VehicleState::create([
+                'veh_id' => $vehId,
+                'team_id' => $request->team_id,
+                'state_id' => $stateId,
+                'name' => 'Created',
+                'code' => 'CREATED',
+                'note' => 'Vehicle created',
+            ]);
+
+            return [
+                'vehicle' => $vehicle->fresh(),
+                'state' => $state,
+            ];
+        });
 
         return response()->json([
             'success' => true,
             'message' => 'Vehicle added successfully.',
-            'data' => $vehicle,
+            'data' => $result['vehicle'],
+            'state' => $result['state'],
         ], 201);
     }
 

@@ -47,5 +47,11 @@ class VehicleFile extends Model
         );
     }
 
+
+    public function fileState()
+    {
+        return $this->belongsTo(VehicleFileState::class, 'file_id', 'id'); // state_id is the foreign key
+    }
+
 }
 
