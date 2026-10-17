@@ -201,6 +201,28 @@ class VehicleHelper
         }
     }
 
+    public static function setVehicleFileState(Request $request): JsonResponse
+    {
+        // Generate a unique state code
+        do {
+            $stateCode = 'STATE-' . strtoupper(Str::random(8));
+        } while (BookingFileState::where('code', $stateCode)->exists());
 
+        // Create vehicle file state
+        $state = BookingFileState::create([
+            'file_id' => $request->file_id,
+            'team_id' => $request->team_id,
+            'state' => $request->name,
+            'code' => $stateCode,
+            'create_at' => now(),
+            'update_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Vehicle file state created successfully.',
+            'data' => $state,
+        ], 201);
+    }
 
 }

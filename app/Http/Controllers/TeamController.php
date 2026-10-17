@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\VehicleHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
@@ -24,5 +25,23 @@ class TeamController extends Controller
         }
 
         return TeamHelper::setBookingFileState($request);
+    }
+
+    public function setVehicleFileState(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'file_id' => 'required|string|exists:booking_files,id',
+            'team_id' => 'required|string|exists:teams,team_id',
+            'name' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        return VehicleHelper::setVehicleFileState($request);
     }
 }
