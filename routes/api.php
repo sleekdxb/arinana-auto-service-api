@@ -68,6 +68,7 @@ Route::prefix('team')->group(function () {
     Route::put('/setBookingFileState', [TeamController::class, 'setBookingFileState']);
     Route::put('/setVehicleFileState', [TeamController::class, 'setVehicleFileState']);
     Route::post('/getUsers', [TeamController::class, 'getUsers']);
+    Route::put('/suspendAccount', [TeamController::class, 'suspendAccount']);
 });
 
 
