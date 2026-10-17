@@ -66,6 +66,7 @@ Route::prefix('teamAuth')->group(function () {
 Route::prefix('team')->group(function () {
     Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
     Route::put('/setBookingFileState', [TeamController::class, 'setBookingFileState']);
+    Route::put('/setVehicleFileState', [TeamController::class, 'setVehicleFileState']);
 });
 
 
