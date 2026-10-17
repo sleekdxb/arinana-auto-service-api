@@ -70,4 +70,22 @@ class TeamController extends Controller
 
         return TeamHelper::getUsers($request);
     }
+
+
+    public function suspendAccount(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string|exists:clients,client_id',
+            'team_id' => 'required|string|exists:teams,team_id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        return TeamHelper::suspendAccount($request);
+    }
 }
