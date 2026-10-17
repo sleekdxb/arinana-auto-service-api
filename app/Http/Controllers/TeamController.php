@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Helpers\VehicleHelper;
+use App\Helpers\TeamHelper;
+use App\Helpers\BookingHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +26,7 @@ class TeamController extends Controller
             ], 422);
         }
 
-        return TeamHelper::setBookingFileState($request);
+        return BookingHelper::setBookingFileState($request);
     }
 
     public function setVehicleFileState(Request $request): JsonResponse
@@ -43,5 +45,29 @@ class TeamController extends Controller
         }
 
         return VehicleHelper::setVehicleFileState($request);
+    }
+
+
+
+    public function getUsers(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'key_word' => 'nullable|string',
+            'customer_type' => 'nullable|string',
+            'status' => 'nullable|string',
+            'team_id' => 'required|string|exists:teams,team_id',
+            'per_page' => 'nullable|integer',
+            'page' => 'nullable|integer',
+
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        return TeamHelper::getUsers($request);
     }
 }

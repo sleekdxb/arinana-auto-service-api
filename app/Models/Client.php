@@ -43,6 +43,17 @@ class Client extends Authenticatable implements JWTSubject
         return $this->hasMany(ClientStatus::class, 'state_id', 'state_id'); // vend_id is the foreign key
     }
 
+    public function vehicles()
+    {
+        return $this->hasMany(Vehicle::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
+
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
     protected function casts(): array
     {
         return [
