@@ -88,4 +88,23 @@ class TeamController extends Controller
 
         return TeamHelper::suspendAccount($request);
     }
+
+
+
+    public function getReportAnalytics(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+        return TeamHelper::getReportAnalytics($request);
+    }
+
+
 }
