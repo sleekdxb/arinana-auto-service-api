@@ -10,9 +10,16 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\TeamAuthController;
 use App\Http\Controllers\TeamStatisticController;
 use App\Http\Controllers\TeamController;
+use App\Http\Controllers\PublicController;
 
 
 //->middleware('verify.token')
+
+
+Route::prefix('public')->group(function () {
+    Route::post('/submitMessage', [PublicController::class, 'submitMessage']);
+});
+
 
 // Clients Authenticate & authorize Endpoints
 Route::prefix('client')->group(function () {
