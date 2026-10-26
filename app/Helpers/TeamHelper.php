@@ -10,6 +10,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Client;
 use App\Models\ClientStatus;
+use App\Models\Booking;
+
+
 
 
 class TeamHelper
@@ -99,5 +102,117 @@ class TeamHelper
         });
     }
 
+
+    public static function getReportAnalytics(Request $request): JsonResponse
+    {
+        // Fetch all bookings. No team_id filtering.
+        $bookings = Booking::query();
+
+        $totalBookings = (clone $bookings)->count();
+
+        $totalCustomers = Client::count();
+
+        // Booking counts by vehicle state.
+        // Change these state names to match your database.
+        $activeBookings = 42;
+
+        //(clone $bookings)
+        // ->whereHas('vehicle.state', function ($query) {
+        //     $query->where('name', 'Active');
+        //  })
+        //  ->count();
+
+        $completedJobs = 20;
+
+        //  (clone $bookings)
+        //  ->whereHas('vehicle.state', function ($query) {
+        //      $query->where('name', 'Completed');
+        ///   })
+        //  ->count();
+
+        // Structural Safety bookings.
+        $totalStructuralSafety = (clone $bookings)
+            ->where('service', 'Structural Safety')
+            ->count();
+
+        // Customer percentages by type.
+        $ownerCount = Client::where('account_type', 'Owner')->count();
+        $dealerCount = Client::where('account_type', 'Dealer')->count();
+
+        $clientPercentage = function (int $count) use ($totalCustomers) {
+            return $totalCustomers > 0
+                ? round(($count / $totalCustomers) * 100, 2)
+                : 0;
+        };
+
+        // Dynamic booking counts and percentages by service.
+        $serviceCounts = (clone $bookings)
+            ->select('service', DB::raw('COUNT(*) as total_bookings'))
+            ->whereNotNull('service')
+            ->where('service', '!=', '')
+            ->groupBy('service')
+            ->orderBy('service')
+            ->get();
+
+        $bookingsByServiceType = $serviceCounts->map(function ($item) use ($totalBookings) {
+            return [
+                'service' => $item->service,
+                'percentage' => $totalBookings > 0
+                    ? round(($item->total_bookings / $totalBookings) * 100, 2)
+                    : 0,
+            ];
+        })->values();
+
+        // Booking volume grouped by month using created_at.
+        $monthlyCounts = (clone $bookings)
+            ->selectRaw('MONTH(created_at) as month_number, COUNT(*) as total_bookings')
+            ->whereNotNull('created_at')
+            ->groupByRaw('MONTH(created_at)')
+            ->orderByRaw('MONTH(created_at)')
+            ->get();
+
+        $bookingsByMonth = $monthlyCounts->mapWithKeys(function ($item) {
+            return [
+                date('M', mktime(0, 0, 0, (int) $item->month_number, 1))
+                => (int) $item->total_bookings,
+            ];
+        });
+
+        // Turnaround distribution by dynamic service type.
+        $turnaroundDistribution = $serviceCounts->map(function ($item) {
+            return [
+                'service_type' => $item->service,
+                'total_bookings' => (int) $item->total_bookings,
+                'completed_bookings' => 24, // Dummy value for now.
+                'average_turnaround_time' => '4 days', // Dummy value.
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'figCard' => [
+                    'total_bookings' => $totalBookings,
+                    'active_bookings' => $activeBookings,
+                    'completed_jobs' => $completedJobs,
+                    'average_turnaround_time' => '4 days',
+                    'total_structural_safety' => $totalStructuralSafety,
+                    'total_users' => $totalCustomers,
+                ],
+
+                'bookings_by_client_type' => [
+                    'car_owner' => $clientPercentage($ownerCount) . '%',
+                    'dealer' => $clientPercentage($dealerCount) . '%',
+                ],
+
+                'bookings_by_service_type' => $bookingsByServiceType,
+
+                'booking_volum_over_time' => $bookingsByMonth,
+
+                'turnaround_time_distribution_by_service_type' =>
+                    $turnaroundDistribution,
+            ],
+        ]);
+    }
 
 }
