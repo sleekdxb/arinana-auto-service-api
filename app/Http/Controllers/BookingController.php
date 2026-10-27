@@ -88,4 +88,11 @@ class BookingController extends Controller
 
         return BookingHelper::getClientBookings($request);
     }
+
+
+
+    public function getServices(Request $request): JsonResponse
+    {
+        return BookingHelper::getServices($request);
+    }
 }

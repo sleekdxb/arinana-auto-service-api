@@ -29,6 +29,7 @@ Route::prefix('client')->group(function () {
     Route::post('/logout', [ClientAuthController::class, 'logout'])->middleware('verify.token');
     Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
     Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
+    Route::get('/getServices', [BookingController::class, 'getServices']);
 });
 
 
