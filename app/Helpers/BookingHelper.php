@@ -8,6 +8,7 @@ use App\Models\Booking;
 use App\Models\BookingState;
 use App\Models\BookingFile;
 use App\Models\Vehicle;
+use App\Models\Service;
 use App\Models\BookingFileState;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
@@ -259,5 +260,27 @@ class BookingHelper
                 'data' => $state,
             ], 201);
         });
+    }
+
+
+    public static function getServices(Request $request): JsonResponse
+    {
+        try {
+            $services = Service::select('ser_id', 'name')
+                ->orderBy('name', 'asc')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Services retrieved successfully.',
+                'data' => $services,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve services.',
+            ], 500);
+        }
     }
 }
