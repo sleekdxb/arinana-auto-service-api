@@ -31,6 +31,7 @@ Route::prefix('client')->group(function () {
     Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
     Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
     Route::get('/getServices', [BookingController::class, 'getServices']);
+    Route::delete('/deleteClient', [ClientAuthController::class, 'deleteClient']);
 });
 
 
