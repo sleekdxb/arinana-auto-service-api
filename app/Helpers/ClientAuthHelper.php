@@ -482,5 +482,35 @@ class ClientAuthHelper
         ], 200);
     }
 
+    public static function deleteClient(Request $request): JsonResponse
+    {
+        try {
+            $client = Client::where('client_id', $request->input('client_id'))
+                ->first();
+
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Client not found.',
+                ], 404);
+            }
+
+            $client->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Client deleted successfully.',
+            ], 200);
+
+        } catch (\Throwable $e) {
+            \Log::error('Delete Client Error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete client.',
+            ], 500);
+        }
+    }
+
 
 }
