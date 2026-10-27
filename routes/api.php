@@ -11,6 +11,7 @@ use App\Http\Controllers\TeamAuthController;
 use App\Http\Controllers\TeamStatisticController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\PublicController;
+use App\Http\Controllers\ServicesController;
 
 
 //->middleware('verify.token')
@@ -78,6 +79,11 @@ Route::prefix('team')->group(function () {
     Route::post('/getUsers', [TeamController::class, 'getUsers']);
     Route::put('/suspendAccount', [TeamController::class, 'suspendAccount']);
     Route::get('/getReportAnalytics', [TeamController::class, 'getReportAnalytics']);
+    Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
+    Route::post('/addServices', [ServicesController::class, 'addServices']);
+    Route::put('/updateServices', [ServicesController::class, 'updateServices']);
+    Route::delete('/deleteServices', [ServicesController::class, 'deleteServices']);
+    Route::get('/getServices', [ServicesController::class, 'getServices']);
 });
 
 
