@@ -11,5 +11,14 @@ class Service extends Model
     protected $fillable = [
         'ser_id',
         'name',
+        'type'
     ];
+
+
+    protected function casts(): array
+    {
+        return [
+            'type' => 'array',
+        ];
+    }
 }

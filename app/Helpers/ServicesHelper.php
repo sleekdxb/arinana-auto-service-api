@@ -16,6 +16,7 @@ class ServicesHelper
             $service = Service::create([
                 'ser_id' => 'SERVICE_' . strtoupper(Str::random(16)),
                 'name' => $request->input('name'),
+                'type' => $request->input('type'),
             ]);
 
             return response()->json([
@@ -36,6 +37,7 @@ class ServicesHelper
 
 
 
+
     public static function updateServices(Request $request): JsonResponse
     {
         try {
@@ -49,9 +51,17 @@ class ServicesHelper
                 ], 404);
             }
 
-            $service->update([
-                'name' => $request->input('name'),
-            ]);
+            $updates = [];
+
+            if ($request->exists('name')) {
+                $updates['name'] = $request->input('name');
+            }
+
+            if ($request->exists('type')) {
+                $updates['type'] = $request->input('type');
+            }
+
+            $service->update($updates);
 
             return response()->json([
                 'success' => true,
@@ -68,6 +78,7 @@ class ServicesHelper
             ], 500);
         }
     }
+
 
     public static function deleteServices(Request $request): JsonResponse
     {
