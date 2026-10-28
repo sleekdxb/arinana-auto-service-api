@@ -30,7 +30,8 @@ class ServicesController extends Controller
         $validator = Validator::make($request->all(), [
             'team_id' => 'required|string|exists:teams,team_id',
             'name' => 'required|string',
-            'type' => "nullable|array"
+            'type' => 'sometimes|nullable|array',
+            'type.*' => 'string',
         ]);
 
         if ($validator->fails()) {
@@ -49,7 +50,8 @@ class ServicesController extends Controller
             'team_id' => 'required|string|exists:teams,team_id',
             'ser_id' => 'required|string',
             'name' => 'required|string',
-            'type' => "nullable|array"
+            'type' => 'sometimes|nullable|array',
+            'type.*' => 'string',
 
         ]);
 
