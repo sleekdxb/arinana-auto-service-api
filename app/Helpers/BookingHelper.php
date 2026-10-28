@@ -266,7 +266,7 @@ class BookingHelper
     public static function getServices(Request $request): JsonResponse
     {
         try {
-            $services = Service::select('ser_id', 'name')
+            $services = Service::select('ser_id', 'name', 'type')
                 ->orderBy('name', 'asc')
                 ->get();
 
