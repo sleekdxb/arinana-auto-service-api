@@ -14,6 +14,7 @@ return new class extends Migration {
             $table->id();
             $table->string('ser_id');
             $table->string('name');
+            $table->text('type');
             $table->timestamps();
         });
     }
