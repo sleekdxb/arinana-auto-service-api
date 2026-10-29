@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\Client;
 use App\Models\ClientStatus;
 use App\Models\Booking;
-
+use App\Models\Vehicle;
 
 
 
@@ -215,4 +215,146 @@ class TeamHelper
         ]);
     }
 
+
+    public static function getBookings(Request $request): JsonResponse
+    {
+        try {
+            $query = Booking::with([
+                'files',
+                'states',
+                'state',
+                'customer',
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Filter by service
+            |--------------------------------------------------------------------------
+            */
+            if ($request->filled('service')) {
+                $query->where(
+                    'service',
+                    'like',
+                    '%' . $request->input('service') . '%'
+                );
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Filter by status (related state name)
+            |--------------------------------------------------------------------------
+            */
+            if ($request->filled('status')) {
+                $status = $request->input('status');
+
+                $query->whereHas('state', function ($stateQuery) use ($status) {
+                    $stateQuery->where(
+                        'name',
+                        'like',
+                        '%' . $status . '%'
+                    );
+                });
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Search keyword
+            |--------------------------------------------------------------------------
+            */
+            if ($request->filled('keyword')) {
+                $keyword = $request->input('keyword');
+                $search = '%' . $keyword . '%';
+
+                $query->where(function ($bookingQuery) use ($search) {
+                    // Search booking fields.
+                    $bookingQuery
+                        ->where('booking_ref', 'like', $search)
+                        ->orWhere('book_id', 'like', $search)
+                        ->orWhere('service', 'like', $search)
+                        ->orWhere('service_type', 'like', $search);
+
+                    // Search related state.
+                    $bookingQuery->orWhereHas(
+                        'state',
+                        function ($stateQuery) use ($search) {
+                            $stateQuery->where('name', 'like', $search);
+                        }
+                    );
+
+                    // Search customer fields.
+                    $bookingQuery->orWhereHas(
+                        'customer',
+                        function ($customerQuery) use ($search) {
+                            $customerQuery
+                                ->where('name', 'like', $search)
+                                ->orWhere('email', 'like', $search)
+                                ->orWhere('phone', 'like', $search);
+                        }
+                    );
+                });
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Retrieve bookings
+            |--------------------------------------------------------------------------
+            */
+            $bookings = $query->get();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Load vehicles and their files
+            |--------------------------------------------------------------------------
+            | vehicle_ids is stored as an array/JSON field, not a standard
+            | Eloquent relationship.
+            */
+            $allVehicleIds = $bookings
+                ->flatMap(function ($booking) {
+                    return $booking->vehicle_ids ?? [];
+                })
+                ->filter()
+                ->unique()
+                ->values();
+
+            $vehicles = collect();
+
+            if ($allVehicleIds->isNotEmpty()) {
+                $vehicles = Vehicle::with('files')
+                    ->whereIn('veh_id', $allVehicleIds)
+                    ->get()
+                    ->keyBy('veh_id');
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Attach matching vehicles to each booking
+            |--------------------------------------------------------------------------
+            */
+            $bookings->each(function ($booking) use ($vehicles) {
+                $vehicleIds = $booking->vehicle_ids ?? [];
+
+                $booking->setRelation(
+                    'vehicle',
+                    collect($vehicleIds)
+                        ->map(fn($vehicleId) => $vehicles->get($vehicleId))
+                        ->filter()
+                        ->values()
+                );
+            });
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Bookings retrieved successfully.',
+                'data' => $bookings,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            \Log::error('Get Bookings Error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve bookings.',
+            ], 500);
+        }
+    }
 }
