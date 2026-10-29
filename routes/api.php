@@ -85,6 +85,8 @@ Route::prefix('team')->group(function () {
     Route::put('/updateServices', [ServicesController::class, 'updateServices']);
     Route::delete('/deleteServices', [ServicesController::class, 'deleteServices']);
     Route::get('/getServices', [ServicesController::class, 'getServices']);
+    Route::get('/getServices', [ServicesController::class, 'getServices']);
+    Route::post('/getBookings', [TeamController::class, 'getBookings']);
 });
 
 

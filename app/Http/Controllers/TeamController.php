@@ -107,4 +107,24 @@ class TeamController extends Controller
     }
 
 
+    public function getBookings(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+            'service' => 'nullable|string',
+            'status' => 'nullable|string',
+            'keyword' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamHelper::getBookings($request);
+    }
+
+
 }
