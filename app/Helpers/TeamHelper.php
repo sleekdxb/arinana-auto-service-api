@@ -12,6 +12,8 @@ use App\Models\Client;
 use App\Models\ClientStatus;
 use App\Models\Booking;
 use App\Models\Vehicle;
+use App\Models\BookingState;
+use App\Models\VehicleState;
 
 
 
@@ -354,6 +356,139 @@ class TeamHelper
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve bookings.',
+            ], 500);
+        }
+    }
+
+
+
+    public static function setBookingState(Request $request): JsonResponse
+    {
+        try {
+            $result = DB::transaction(function () use ($request) {
+
+                // Find the booking.
+                $booking = Booking::where(
+                    'book_id',
+                    $request->input('book_id')
+                )->first();
+
+                if (!$booking) {
+                    return null;
+                }
+
+                // Generate a unique state ID.
+                $stateId = 'STATE_' . strtoupper(Str::random(16));
+
+                // Create the booking state record.
+                $state = BookingState::create([
+                    'book_id' => $booking->book_id,
+                    'team_id' => $request->input('team_id'),
+                    'state_id' => $stateId,
+                    'name' => strtoupper($request->input('name')),
+                    'code' => 'TEAM_4512',
+                    'note' => $request->input('note'),
+                ]);
+
+                // Update the booking with the new state ID.
+                $booking->update([
+                    'state_id' => $stateId,
+                ]);
+
+                return [
+                    'booking' => $booking->fresh(),
+                    'state' => $state,
+                ];
+            });
+
+            if (!$result) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Booking state updated successfully.',
+                'data' => [
+                    'booking' => $result['booking'],
+                    'state' => $result['state'],
+                ],
+            ], 200);
+
+        } catch (\Throwable $e) {
+            \Log::error('Set Booking State Error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update booking state.',
+            ], 500);
+        }
+    }
+
+
+    public static function setVehicleState(Request $request): JsonResponse
+    {
+        try {
+            $result = DB::transaction(function () use ($request) {
+
+                // Find the vehicle.
+                $vehicle = Vehicle::where(
+                    'veh_id',
+                    $request->input('veh_id')
+                )->first();
+
+                if (!$vehicle) {
+                    return null;
+                }
+
+                // Generate a unique state ID.
+                $stateId = 'STATE_' . strtoupper(Str::random(16));
+
+                // Create the vehicle state record.
+                $state = VehicleState::create([
+                    'veh_id' => $vehicle->veh_id,
+                    'team_id' => $request->input('team_id'),
+                    'state_id' => $stateId,
+                    'name' => strtoupper($request->input('name')),
+                    'code' => 'TEAM_4512',
+                    'note' => $request->input('note'),
+                ]);
+
+                // Update the vehicle's state_id.
+                $vehicle->update([
+                    'state_id' => $stateId,
+                ]);
+
+                return [
+                    'vehicle' => $vehicle->fresh(),
+                    'state' => $state,
+                ];
+            });
+
+            if (!$result) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Vehicle not found.',
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Vehicle state updated successfully.',
+                'data' => [
+                    'vehicle' => $result['vehicle'],
+                    'state' => $result['state'],
+                ],
+            ], 200);
+
+        } catch (\Throwable $e) {
+            \Log::error('Set Vehicle State Error: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update vehicle state.',
             ], 500);
         }
     }

@@ -87,6 +87,8 @@ Route::prefix('team')->group(function () {
     Route::get('/getServices', [ServicesController::class, 'getServices']);
     Route::get('/getServices', [ServicesController::class, 'getServices']);
     Route::post('/getBookings', [TeamController::class, 'getBookings']);
+    Route::post('/setBookingState', [TeamController::class, 'setBookingState']);
+    Route::post('/setVehicleState', [TeamController::class, 'setVehicleState']);
 });
 
 

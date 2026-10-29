@@ -127,4 +127,46 @@ class TeamController extends Controller
     }
 
 
+
+
+
+    public function setBookingState(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+            'name' => 'required|string',
+            'book_id' => 'required|string',
+            'note' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamHelper::setBookingState($request);
+    }
+
+    public function setVehicleState(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+            'veh_id' => 'required|string',
+            'name' => 'required|string',
+            'note' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return TeamHelper::setVehicleState($request);
+    }
+
+
 }
