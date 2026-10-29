@@ -39,8 +39,6 @@ class TeamAuthHelper
                 $user->team_id
             )->get();
 
-            $isFirstLogin = $existingSessions->isEmpty();
-
             /*
             |--------------------------------------------------------------------------
             | 1. CHECK IF DEVICE SESSION EXISTS
@@ -56,32 +54,15 @@ class TeamAuthHelper
                 ) {
                     /*
                     |--------------------------------------------------------------------------
-                    | OTP STILL PENDING
+                    | OTP CHECK DISABLED
                     |--------------------------------------------------------------------------
+                    | The otp_pending check has been removed.
+                    | Existing device sessions can now be refreshed directly.
                     */
-
-                    if (
-                        !empty($payload['otp_pending']) &&
-                        $payload['otp_pending'] === true
-                    ) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'OTP verification required for this device',
-                            'data' => [
-                                'user' => [
-                                    'team_id' => $user->team_id,
-                                    'email' => $user->email,
-                                ],
-                                'auth' => [
-                                    'session_id' => $session->session_id
-                                ]
-                            ]
-                        ], 403);
-                    }
 
                     /*
                     |--------------------------------------------------------------------------
-                    | DEVICE VERIFIED - REFRESH SESSION
+                    | DEVICE FOUND - REFRESH SESSION
                     |--------------------------------------------------------------------------
                     */
 
@@ -92,6 +73,7 @@ class TeamAuthHelper
                     $payload['access_token'] = $token;
                     $payload['ip_address'] = $request->ip();
                     $payload['user_agent'] = $request->header('User-Agent');
+                    $payload['otp_pending'] = false;
 
                     $session->update([
                         'payload' => json_encode($payload),
@@ -120,49 +102,15 @@ class TeamAuthHelper
 
             /*
             |--------------------------------------------------------------------------
-            | 2. NEW DEVICE - REQUIRE OTP
+            | 2. NEW DEVICE - OTP CHECK DISABLED
             |--------------------------------------------------------------------------
+            | No OTP verification is required for a new device.
+            | The login flow continues directly to session creation.
             */
-
-            // if (!$isFirstLogin && !$otpVerified) {
-            //     $token = JWTAuth::customClaims([
-            //         'exp' => $expirationTime->timestamp
-            //     ])->fromUser($user);
-
-            //   $session = TeamSession::create([
-            //      'session_id' => 'SESS_' . strtoupper(Str::random(18)),
-            //      'team_id' => $user->team_id,
-            //       'ip_address' => $request->ip(),
-            //      'user_agent' => $request->header('User-Agent'),
-            //      'payload' => json_encode([
-            //          'access_token' => $token,
-            //         'device_key' => $currentDeviceKey,
-            //         'ip_address' => $request->ip(),
-            //         'user_agent' => $request->header('User-Agent'),
-            //         'otp_pending' => true
-            //     ]),
-            //    'last_activity' => now()->timestamp,
-            //  'expires_at' => $expirationTime
-            // ]);
-
-            //  return response()->json([
-            //      'success' => false,
-            //      'message' => 'OTP verification required',
-            //     'data' => [
-            //        'user' => [
-            //            'team_id' => $user->team_id,
-            //            'email' => $user->email,
-            //        ],
-            //        'auth' => [
-            //            'session_id' => $session->session_id
-            //        ]
-            //    ]
-            // ], 403);
-            // }
 
             /*
             |--------------------------------------------------------------------------
-            | 3. FIRST LOGIN OR OTP VERIFIED
+            | 3. CREATE SESSION AND ISSUE JWT
             |--------------------------------------------------------------------------
             */
 
@@ -201,7 +149,7 @@ class TeamAuthHelper
                 ]
             ], 200);
 
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             report($e);
 
             return response()->json([
@@ -210,7 +158,6 @@ class TeamAuthHelper
             ], 500);
         }
     }
-
 
 
 
