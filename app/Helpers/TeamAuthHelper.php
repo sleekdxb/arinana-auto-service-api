@@ -124,41 +124,41 @@ class TeamAuthHelper
             |--------------------------------------------------------------------------
             */
 
-            if (!$isFirstLogin && !$otpVerified) {
-                $token = JWTAuth::customClaims([
-                    'exp' => $expirationTime->timestamp
-                ])->fromUser($user);
+            // if (!$isFirstLogin && !$otpVerified) {
+            //     $token = JWTAuth::customClaims([
+            //         'exp' => $expirationTime->timestamp
+            //     ])->fromUser($user);
 
-                $session = TeamSession::create([
-                    'session_id' => 'SESS_' . strtoupper(Str::random(18)),
-                    'team_id' => $user->team_id,
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->header('User-Agent'),
-                    'payload' => json_encode([
-                        'access_token' => $token,
-                        'device_key' => $currentDeviceKey,
-                        'ip_address' => $request->ip(),
-                        'user_agent' => $request->header('User-Agent'),
-                        'otp_pending' => true
-                    ]),
-                    'last_activity' => now()->timestamp,
-                    'expires_at' => $expirationTime
-                ]);
+            //   $session = TeamSession::create([
+            //      'session_id' => 'SESS_' . strtoupper(Str::random(18)),
+            //      'team_id' => $user->team_id,
+            //       'ip_address' => $request->ip(),
+            //      'user_agent' => $request->header('User-Agent'),
+            //      'payload' => json_encode([
+            //          'access_token' => $token,
+            //         'device_key' => $currentDeviceKey,
+            //         'ip_address' => $request->ip(),
+            //         'user_agent' => $request->header('User-Agent'),
+            //         'otp_pending' => true
+            //     ]),
+            //    'last_activity' => now()->timestamp,
+            //  'expires_at' => $expirationTime
+            // ]);
 
-                return response()->json([
-                    'success' => false,
-                    'message' => 'OTP verification required',
-                    'data' => [
-                        'user' => [
-                            'team_id' => $user->team_id,
-                            'email' => $user->email,
-                        ],
-                        'auth' => [
-                            'session_id' => $session->session_id
-                        ]
-                    ]
-                ], 403);
-            }
+            //  return response()->json([
+            //      'success' => false,
+            //      'message' => 'OTP verification required',
+            //     'data' => [
+            //        'user' => [
+            //            'team_id' => $user->team_id,
+            //            'email' => $user->email,
+            //        ],
+            //        'auth' => [
+            //            'session_id' => $session->session_id
+            //        ]
+            //    ]
+            // ], 403);
+            // }
 
             /*
             |--------------------------------------------------------------------------
