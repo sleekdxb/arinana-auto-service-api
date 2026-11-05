@@ -12,7 +12,18 @@ return new class extends Migration {
         $this->dropUniqueOn('booking_files', 'book_id');
         $this->dropUniqueOn('vehicle_files', 'veh_id');
 
-        if (!Schema::hasColumn('booking_file_states', 'note')) {
+        if (!Schema::hasTable('booking_file_states')) {
+            Schema::create('booking_file_states', function (Blueprint $table) {
+                $table->id();
+                $table->string('file_id')->index();
+                $table->string('team_id')->nullable()->index();
+                $table->string('state');
+                $table->string('code')->nullable();
+                $table->text('note')->nullable();
+                $table->timestamp('create_at')->nullable();
+                $table->timestamp('update_at')->nullable();
+            });
+        } elseif (!Schema::hasColumn('booking_file_states', 'note')) {
             Schema::table('booking_file_states', function (Blueprint $table) {
                 $table->text('note')->nullable();
             });
@@ -33,15 +44,16 @@ return new class extends Migration {
         if (!Schema::hasTable('client_notifications')) {
             Schema::create('client_notifications', function (Blueprint $table) {
                 $table->id();
-                $table->string('notif_id')->unique();
-                $table->string('client_id')->index();
-                $table->string('type')->index();
-                $table->string('title');
-                $table->text('body')->nullable();
-                $table->string('ref_id')->nullable()->index();
-                $table->json('data')->nullable();
-                $table->timestamp('read_at')->nullable()->index();
+                $table->string('notification_id')->nullable()->index();
+                $table->string('client_id')->nullable()->index();
+                $table->string('notifiable_id')->nullable()->index();
+                $table->string('type')->nullable();
+                $table->string('subject')->nullable();
+                $table->longText('data')->nullable();
+                $table->boolean('read')->default(false);
+                $table->timestamp('read_at')->nullable();
                 $table->timestamps();
+                $table->index(['client_id', 'read'], 'client_notifications_client_read_index');
             });
         }
 
