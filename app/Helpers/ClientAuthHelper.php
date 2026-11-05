@@ -10,6 +10,8 @@ use App\Models\ClientStatus;
 use Illuminate\Support\Facades\Hash;
 use App\Events\ClientRegistered;
 use App\Models\ClientSession;
+use App\Models\ClientFile;
+use Illuminate\Support\Facades\Storage;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class ClientAuthHelper
@@ -460,6 +462,8 @@ class ClientAuthHelper
             'first_name',
             'last_name',
             'phone',
+            'business_name',
+            'registration_number',
         ];
 
         // Get only allowed fields
@@ -469,6 +473,35 @@ class ClientAuthHelper
         $data = array_filter($data, function ($value) {
             return $value !== null && $value !== '';
         });
+
+        if (isset($data['email'])) {
+            $data['email'] = strtolower(trim($data['email']));
+
+            if ($data['email'] !== $client->email) {
+                $emailHash = hash('sha256', $data['email']);
+
+                if (Client::where('hashed_email', $emailHash)->where('client_id', '!=', $client->client_id)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This email is already in use.',
+                        'errors' => ['email' => ['This email is already in use.']],
+                    ], 422);
+                }
+
+                $data['hashed_email'] = $emailHash;
+            } else {
+                unset($data['email']);
+            }
+        }
+
+        if (isset($data['phone']) && $data['phone'] !== $client->phone
+            && Client::where('phone', $data['phone'])->where('client_id', '!=', $client->client_id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This phone number is already in use.',
+                'errors' => ['phone' => ['This phone number is already in use.']],
+            ], 422);
+        }
 
         // Update only existing and non-empty fields
         if (!empty($data)) {
@@ -481,6 +514,70 @@ class ClientAuthHelper
             'data' => $client->fresh(),
         ], 200);
     }
+
+    public static function changePassword(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        if (!Hash::check($request->current_password, $client->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+                'errors' => ['current_password' => ['Current password is incorrect.']],
+            ], 422);
+        }
+
+        $client->password = Hash::make($request->password);
+        $client->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password changed successfully.',
+        ], 200);
+    }
+
+
+    public static function removeProfilePhoto(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $photos = ClientFile::where('client_id', $client->client_id)
+            ->where('file_url', 'like', 'account/Profiles/Img/%')
+            ->get();
+
+        foreach ($photos as $photo) {
+            try {
+                Storage::disk('hostinger')->delete($photo->file_url);
+            } catch (\Throwable $e) {
+                \Log::warning('Remove Profile Photo: ' . $e->getMessage());
+            }
+
+            $photo->delete();
+        }
+
+        $client->update(['profile_img' => null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile photo removed successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+
 
     public static function deleteClient(Request $request): JsonResponse
     {

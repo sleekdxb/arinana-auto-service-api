@@ -17,5 +17,6 @@ class BookingFileState extends Model
         'code',
         'create_at',
         'update_at',
+        'note',
     ];
 }

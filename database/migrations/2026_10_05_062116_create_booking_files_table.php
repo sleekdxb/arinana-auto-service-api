@@ -13,14 +13,14 @@ return new class extends Migration {
         Schema::create('booking_files', function (Blueprint $table) {
 
             $table->id(); // auto increment
-            $table->string('book_id')->unique();
+            $table->string('book_id')->index();
             $table->string('client_id')->index();
             $table->string('file_name');
             $table->unsignedBigInteger('file_size')->index();
             $table->string('file_type')->index();
             $table->string('file_url');
             $table->timestamps();
-            $table->index(['veh_id', 'file_type']);
+            $table->index(['book_id', 'file_type']);
 
         });
 

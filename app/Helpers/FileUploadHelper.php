@@ -7,7 +7,7 @@ use Carbon\Carbon;
 use App\Models\Client;
 use App\Models\ClientFile;
 use App\Models\VehicleFile;
-use App\Models\ClientFileStatus;
+use App\Models\Booking;
 use App\Models\VehicleFileState;
 use App\Models\BookingFile;
 use App\Models\BookingFileState;
@@ -35,6 +35,18 @@ class FileUploadHelper
         $disk = Storage::disk('hostinger');
         $uploadBaseUrl = rtrim(env('UPLOAD_BASE_URL', ''), '/');
         $profileImageUrl = null;
+        $booking = null;
+
+        if (str_starts_with($target, 'booking')) {
+            $booking = Booking::where('book_id', $refId)->first();
+
+            if (!$booking) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+        }
 
         /* --------------------------------
            Normalize expiry data
@@ -256,15 +268,7 @@ class FileUploadHelper
 
             if (str_starts_with($target, 'account')) {
 
-                $upload = ClientFile::create($entry);
-
-                $state = ClientFileStatus::create([
-                    'file_id' => $entry['file_id'],
-                    'state' => 'uploaded',
-                    'code' => 'UPLOADED471',
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
+                $upload = ClientFile::create($entry + ['client_id' => $refId]);
             }
 
             /*
@@ -273,14 +277,17 @@ class FileUploadHelper
             |--------------------------------------------------------------------------
             */ elseif (str_starts_with($target, 'booking')) {
 
-                $upload = BookingFile::create($entry);
+                $upload = BookingFile::create($entry + [
+                    'book_id' => $booking->book_id,
+                    'client_id' => $booking->client_id,
+                ]);
 
-                $state = BookingFileState::create([
-                    'file_id' => $entry['file_id'],
+                BookingFileState::create([
+                    'file_id' => $upload->id,
                     'state' => 'uploaded',
                     'code' => 'UPLOADED471',
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'create_at' => $now,
+                    'update_at' => $now,
                 ]);
             }
 
@@ -300,16 +307,6 @@ class FileUploadHelper
                     'updated_at' => $now,
                 ]);
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | Attach State
-            |--------------------------------------------------------------------------
-            */
-
-            $upload->update([
-                'file_state_id' => $state->id
-            ]);
 
             $details[$i]['upload_id'] = $upload->id;
         }

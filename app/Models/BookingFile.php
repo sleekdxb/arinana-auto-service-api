@@ -24,6 +24,16 @@ class BookingFile extends Model
         'file_size' => 'integer',
     ];
 
+    public function states()
+    {
+        return $this->hasMany(BookingFileState::class, 'file_id', 'id')->orderBy('id');
+    }
+
+    public function latestState()
+    {
+        return $this->hasOne(BookingFileState::class, 'file_id', 'id')->latestOfMany();
+    }
+
     /**
      * Booking relationship
      */
@@ -44,7 +54,7 @@ class BookingFile extends Model
         return $this->belongsTo(
             Client::class,
             'client_id',
-            'id'
+            'client_id'
         );
     }
 }

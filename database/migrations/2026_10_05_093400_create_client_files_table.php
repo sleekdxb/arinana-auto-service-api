@@ -10,6 +10,10 @@ return new class extends Migration {
      */
     public function up(): void
     {
+        if (Schema::hasTable('client_files')) {
+            return;
+        }
+
         Schema::create('client_files', function (Blueprint $table) {
             $table->id(); // auto increment
             $table->string('client_id')->index();

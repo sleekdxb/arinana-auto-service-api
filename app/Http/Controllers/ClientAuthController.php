@@ -117,6 +117,8 @@ class ClientAuthController extends Controller
             'first_name' => 'required|string',
             'last_name' => 'required|string',
             'phone' => 'required|string',
+            'business_name' => 'nullable|string',
+            'registration_number' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
@@ -127,6 +129,41 @@ class ClientAuthController extends Controller
         }
 
         return ClientAuthHelper::updateProfile($request);
+    }
+
+    public function changePassword(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|different:current_password',
+            'confirm_password' => 'required|string|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::changePassword($request);
+    }
+
+    public function removeProfilePhoto(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::removeProfilePhoto($request);
     }
 
     public function deleteClient(Request $request): JsonResponse

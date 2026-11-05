@@ -12,6 +12,7 @@ use App\Http\Controllers\TeamStatisticController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\ServicesController;
+use App\Http\Controllers\NotificationController;
 
 
 //->middleware('verify.token')
@@ -32,6 +33,10 @@ Route::prefix('client')->group(function () {
     Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
     Route::get('/getServices', [BookingController::class, 'getServices']);
     Route::delete('/deleteClient', [ClientAuthController::class, 'deleteClient']);
+    Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
+    Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
+    Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
+    Route::put('/updatePreferences', [NotificationController::class, 'updatePreferences']);
 });
 
 
@@ -62,6 +67,13 @@ Route::prefix('booking')->group(function () {
     Route::put('/updateBooking', [BookingController::class, 'updateBooking']);
     Route::delete('/deleteBooking', [BookingController::class, 'deleteBooking']);
     Route::get('/getClientBookings', [BookingController::class, 'getClientBookings']);
+    Route::get('/getAvailableSlots', [BookingController::class, 'getAvailableSlots']);
+});
+
+
+Route::prefix('notifications')->group(function () {
+    Route::get('/getNotifications', [NotificationController::class, 'getNotifications']);
+    Route::put('/markRead', [NotificationController::class, 'markRead']);
 });
 
 

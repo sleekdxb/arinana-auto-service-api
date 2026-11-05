@@ -91,6 +91,24 @@ class BookingController extends Controller
 
 
 
+    public function getAvailableSlots(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'from' => 'nullable|date',
+            'days' => 'nullable|integer|min:1',
+            'exclude_book_id' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return BookingHelper::getAvailableSlots($request);
+    }
+
     public function getServices(Request $request): JsonResponse
     {
         return BookingHelper::getServices($request);
