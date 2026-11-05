@@ -61,6 +61,24 @@ class NotificationController extends Controller
         return NotificationHelper::getPreferences($request);
     }
 
+    public function updatePushToken(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string|exists:clients,client_id',
+            'session_id' => 'required|string',
+            'fcm_token' => 'nullable|string|max:4096',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return NotificationHelper::updatePushToken($request);
+    }
+
     public function updatePreferences(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [

@@ -23,6 +23,7 @@ class ClientSession extends Model
         'payload',
         'expires_at',
         'last_activity',
+        'fcm_token',
     ];
 
     protected function casts(): array

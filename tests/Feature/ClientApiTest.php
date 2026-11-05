@@ -293,7 +293,7 @@ class ClientApiTest extends TestCase
             'account_img' => [UploadedFile::fake()->image('avatar.jpg')],
         ])->assertOk();
 
-        $this->assertNotNull($this->client->fresh()->profile_img);
+        $this->assertStringStartsWith('https://arianaautoservice.com/Files/account/Profiles/Img/', $this->client->fresh()->profile_img);
         $this->assertSame(1, ClientFile::where('client_id', $this->client->client_id)->count());
 
         $this->deleteJson('/api/client/removeProfilePhoto', ['client_id' => $this->client->client_id])
@@ -301,5 +301,146 @@ class ClientApiTest extends TestCase
             ->assertJsonPath('data.profile_img', null);
 
         $this->assertSame(0, ClientFile::where('client_id', $this->client->client_id)->count());
+    }
+
+    private function signIn(string $id, ?string $token = null): void
+    {
+        \App\Models\ClientSession::create([
+            'id' => 'ID_' . $id,
+            'client_id' => $this->client->client_id,
+            'session_id' => $id,
+            'payload' => '{}',
+            'last_activity' => time(),
+            'fcm_token' => $token,
+        ]);
+    }
+
+    private function fakeFirebase(): void
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_pkey_export($key, $pem);
+        $path = sys_get_temp_dir() . '/fcm-test-' . uniqid() . '.json';
+        file_put_contents($path, json_encode([
+            'project_id' => 'ariana-test',
+            'client_email' => 'push@ariana-test.iam.gserviceaccount.com',
+            'private_key' => $pem,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ]));
+        config(['services.fcm.credentials' => $path]);
+        \Illuminate\Support\Facades\Cache::forget('fcm_access_token');
+    }
+
+    public function test_booking_emails_follow_preferences(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $vehicle = $this->addVehicle();
+        $bookId = $this->book($vehicle)->assertCreated()->json('data.book_id');
+
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\BookingUpdateMail::class,
+            fn($mail) => $mail->hasTo('owner@example.com')
+                && str_starts_with($mail->subjectLine, 'Booking confirmed – ARN-')
+                && in_array(['Date & time', 'Thu, Nov 5, 2026, 8:00 AM'], $mail->details['rows'], true)
+        );
+
+        $this->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'READY_FOR_PICKUP',
+            'note' => 'Bay 3, keys at the front desk',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\BookingUpdateMail::class,
+            fn($mail) => $mail->details['heading'] === 'Ready for Pickup'
+                && $mail->details['note'] === 'Bay 3, keys at the front desk'
+        );
+        $this->assertSame(2, \App\Models\ClientEmail::where('is_sent', true)->count());
+
+        $this->putJson('/api/client/updatePreferences', [
+            'client_id' => $this->client->client_id,
+            'service_status_updates' => false,
+        ])->assertOk();
+
+        $this->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'IN_PROGRESS',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSentCount(2);
+
+        $this->putJson('/api/client/updatePreferences', [
+            'client_id' => $this->client->client_id,
+            'service_status_updates' => true,
+            'email_enabled' => false,
+        ])->assertOk();
+
+        $this->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'COMPLETED',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSentCount(2);
+    }
+
+    public function test_push_goes_to_signed_in_devices_and_drops_dead_tokens(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $this->fakeFirebase();
+        $this->signIn('SESS_A', 'token-live');
+        $this->signIn('SESS_B', 'token-dead');
+        \Illuminate\Support\Facades\Http::fake([
+            'oauth2.googleapis.com/*' => \Illuminate\Support\Facades\Http::response(['access_token' => 'ya29.test']),
+            'fcm.googleapis.com/*' => function ($request) {
+                return $request['message']['token'] === 'token-dead'
+                    ? \Illuminate\Support\Facades\Http::response(['error' => ['status' => 'NOT_FOUND', 'details' => [['errorCode' => 'UNREGISTERED']]]], 404)
+                    : \Illuminate\Support\Facades\Http::response(['name' => 'projects/ariana-test/messages/1']);
+            },
+        ]);
+
+        $this->book($this->addVehicle())->assertCreated();
+
+        \Illuminate\Support\Facades\Http::assertSent(fn($request) => str_contains($request->url(), 'projects/ariana-test/messages:send')
+            && $request['message']['token'] === 'token-live'
+            && $request['message']['notification']['title'] === 'Booking Confirmed!'
+            && $request['message']['data']['type'] === 'booking_placed'
+            && $request->hasHeader('Authorization', 'Bearer ya29.test'));
+        $this->assertNull(\App\Models\ClientSession::where('session_id', 'SESS_B')->value('fcm_token'));
+        $this->assertSame('token-live', \App\Models\ClientSession::where('session_id', 'SESS_A')->value('fcm_token'));
+    }
+
+    public function test_no_push_without_firebase_credentials(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        config(['services.fcm.credentials' => '/nonexistent.json']);
+        $this->signIn('SESS_A', 'token-live');
+        \Illuminate\Support\Facades\Http::fake();
+
+        $this->book($this->addVehicle())->assertCreated();
+
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
+    public function test_push_token_moves_to_the_latest_session(): void
+    {
+        $this->signIn('SESS_OLD', 'shared-device');
+        $this->signIn('SESS_NEW');
+
+        $this->putJson('/api/client/updatePushToken', [
+            'client_id' => $this->client->client_id,
+            'session_id' => 'SESS_NEW',
+            'fcm_token' => 'shared-device',
+        ])->assertOk();
+
+        $this->assertNull(\App\Models\ClientSession::where('session_id', 'SESS_OLD')->value('fcm_token'));
+        $this->assertSame('shared-device', \App\Models\ClientSession::where('session_id', 'SESS_NEW')->value('fcm_token'));
+
+        $this->putJson('/api/client/updatePushToken', [
+            'client_id' => $this->client->client_id,
+            'session_id' => 'SESS_MISSING',
+            'fcm_token' => 'x',
+        ])->assertNotFound();
     }
 }

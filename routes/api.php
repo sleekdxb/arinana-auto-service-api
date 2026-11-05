@@ -37,6 +37,7 @@ Route::prefix('client')->group(function () {
     Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
     Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
     Route::put('/updatePreferences', [NotificationController::class, 'updatePreferences']);
+    Route::put('/updatePushToken', [NotificationController::class, 'updatePushToken']);
 });
 
 
