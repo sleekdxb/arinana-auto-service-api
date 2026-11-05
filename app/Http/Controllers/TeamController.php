@@ -33,7 +33,7 @@ class TeamController extends Controller
     public function setVehicleFileState(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'file_id' => 'required|string|exists:booking_files,id',
+            'file_id' => 'required|string|exists:vehicle_files,id',
             'team_id' => 'required|string|exists:teams,team_id',
             'name' => 'required|string',
         ]);
@@ -170,4 +170,71 @@ class TeamController extends Controller
     }
 
 
+    public function setBookingEta(Request $request): JsonResponse
+    {
+        return $this->validated($request, [
+            'book_id' => 'required|string',
+            'estimated_completion_at' => 'nullable|date',
+            'note' => 'nullable|string|max:1000',
+        ], fn() => TeamHelper::setBookingEta($request));
+    }
+
+    public function getTechnicians(Request $request): JsonResponse
+    {
+        return $this->validated($request, [], fn() => TeamHelper::getTechnicians($request));
+    }
+
+    public function assignTechnician(Request $request): JsonResponse
+    {
+        return $this->validated($request, [
+            'book_id' => 'required|string',
+            'technician_id' => 'nullable|string|exists:teams,team_id',
+        ], fn() => TeamHelper::assignTechnician($request));
+    }
+
+    public function uploadBookingCertificate(Request $request): JsonResponse
+    {
+        return $this->validated($request, [
+            'book_id' => 'required|string',
+            'certificate' => 'required|file|mimes:pdf,jpg,jpeg,png|max:20480',
+        ], fn() => TeamHelper::uploadBookingCertificate($request));
+    }
+
+    public function updateClient(Request $request): JsonResponse
+    {
+        return $this->validated($request, [
+            'client_id' => 'required|string|exists:clients,client_id',
+            'first_name' => 'nullable|string|max:100',
+            'last_name' => 'nullable|string|max:100',
+            'phone' => 'nullable|string|max:30',
+            'email' => 'nullable|email',
+            'account_type' => 'nullable|string|in:individual,dealer,Individual,Dealer',
+            'business_name' => 'nullable|string|max:150',
+            'registration_number' => 'nullable|string|max:100',
+        ], fn() => TeamHelper::updateClient($request));
+    }
+
+    public function reactivateAccount(Request $request): JsonResponse
+    {
+        return $this->validated($request, [
+            'client_id' => 'required|string|exists:clients,client_id',
+            'note' => 'nullable|string|max:500',
+        ], fn() => TeamHelper::reactivateAccount($request));
+    }
+
+    private function validated(Request $request, array $rules, callable $next): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'team_id' => 'required|string|exists:teams,team_id',
+        ] + $rules);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return $next();
+    }
 }

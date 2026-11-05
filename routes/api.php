@@ -13,6 +13,7 @@ use App\Http\Controllers\TeamController;
 use App\Http\Controllers\PublicController;
 use App\Http\Controllers\ServicesController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\SettingsController;
 
 
 //->middleware('verify.token')
@@ -69,6 +70,8 @@ Route::prefix('booking')->group(function () {
     Route::delete('/deleteBooking', [BookingController::class, 'deleteBooking']);
     Route::get('/getClientBookings', [BookingController::class, 'getClientBookings']);
     Route::get('/getAvailableSlots', [BookingController::class, 'getAvailableSlots']);
+    Route::get('/getDocumentRequirements', [SettingsController::class, 'getClientDocumentRequirements']);
+    Route::get('/getStatusPipelines', [SettingsController::class, 'getClientStatusPipelines']);
 });
 
 
@@ -102,6 +105,21 @@ Route::prefix('team')->group(function () {
     Route::post('/getBookings', [TeamController::class, 'getBookings']);
     Route::post('/setBookingState', [TeamController::class, 'setBookingState']);
     Route::post('/setVehicleState', [TeamController::class, 'setVehicleState']);
+    Route::post('/setBookingEta', [TeamController::class, 'setBookingEta']);
+    Route::get('/getTechnicians', [TeamController::class, 'getTechnicians']);
+    Route::post('/assignTechnician', [TeamController::class, 'assignTechnician']);
+    Route::post('/uploadBookingCertificate', [TeamController::class, 'uploadBookingCertificate']);
+    Route::put('/updateClient', [TeamController::class, 'updateClient']);
+    Route::put('/reactivateAccount', [TeamController::class, 'reactivateAccount']);
+
+    Route::get('/getAvailability', [SettingsController::class, 'getAvailability']);
+    Route::put('/updateAvailability', [SettingsController::class, 'updateAvailability']);
+    Route::get('/getDocumentRequirements', [SettingsController::class, 'getDocumentRequirements']);
+    Route::put('/updateDocumentRequirements', [SettingsController::class, 'updateDocumentRequirements']);
+    Route::get('/getStatusPipelines', [SettingsController::class, 'getStatusPipelines']);
+    Route::put('/updateStatusPipelines', [SettingsController::class, 'updateStatusPipelines']);
+    Route::get('/getNotificationSettings', [SettingsController::class, 'getNotificationSettings']);
+    Route::put('/updateNotificationSettings', [SettingsController::class, 'updateNotificationSettings']);
 });
 
 

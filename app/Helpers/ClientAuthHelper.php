@@ -136,6 +136,13 @@ class ClientAuthHelper
                 ], 401);
             }
 
+            if ($state && strtoupper((string) $state->code) === 'SUSPENDED') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your account has been suspended. Please contact support.'
+                ], 403);
+            }
+
 
 
             $expirationTime = now()->addDays(7);
