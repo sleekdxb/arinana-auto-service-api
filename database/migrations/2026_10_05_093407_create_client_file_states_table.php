@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasTable('client_file_states')) {
+            return;
+        }
+
         Schema::create('client_file_states', function (Blueprint $table) {
             $table->id();
             $table->timestamps();

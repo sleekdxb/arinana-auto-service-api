@@ -12,7 +12,7 @@ return new class extends Migration {
     {
         Schema::create('vehicle_files', function (Blueprint $table) {
             $table->id(); // auto increment
-            $table->string('veh_id')->unique();
+            $table->string('veh_id')->index();
             $table->string('file_name');
             $table->unsignedBigInteger('file_size')->index();
             $table->string('file_type')->index();

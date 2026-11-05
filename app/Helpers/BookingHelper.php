@@ -21,6 +21,12 @@ class BookingHelper
 
     public static function addBooking(Request $request): JsonResponse
     {
+        $slotError = self::slotError($request->date, $request->time);
+
+        if ($slotError) {
+            return $slotError;
+        }
+
         DB::beginTransaction();
 
         try {
@@ -45,11 +51,11 @@ class BookingHelper
                 'book_id' => $bookId,
                 'booking_ref' => $bookingRef,
                 'client_id' => $request->client_id,
-                'vehicle_ids' => json_encode($request->vehicle_ids),
+                'vehicle_ids' => array_values($request->vehicle_ids),
                 'service' => $request->service,
                 'service_type' => $request->service_type,
                 'date' => $request->date,
-                'time' => $request->time,
+                'time' => self::normalizeTime($request->time),
                 'note' => $request->note,
                 'state_id' => $stateId,
             ]);
@@ -60,12 +66,14 @@ class BookingHelper
                 'book_id' => $booking->book_id,
                 'team_id' => 'SYSTEM01',
                 'state_id' => $stateId,
-                'name' => 'PLACED',
+                'name' => BookingState::PLACED,
                 'code' => 'PLACED01',
                 'note' => 'Booking created',
             ]);
 
             DB::commit();
+
+            NotificationHelper::bookingPlaced($booking);
 
             return response()->json([
                 'success' => true,
@@ -114,7 +122,7 @@ class BookingHelper
             }
 
             if ($request->filled('time')) {
-                $data['time'] = $request->time;
+                $data['time'] = self::normalizeTime($request->time);
             }
 
             if ($request->has('note') && $request->note !== '') {
@@ -122,7 +130,21 @@ class BookingHelper
             }
 
             if ($request->has('vehicle_ids') && !empty($request->vehicle_ids)) {
-                $data['vehicle_ids'] = json_encode($request->vehicle_ids);
+                $data['vehicle_ids'] = array_values($request->vehicle_ids);
+            }
+
+            if (isset($data['date']) || isset($data['time'])) {
+                $slotError = self::slotError(
+                    $data['date'] ?? $booking->date->toDateString(),
+                    $data['time'] ?? substr((string) $booking->getRawOriginal('time'), 0, 5),
+                    $booking->book_id
+                );
+
+                if ($slotError) {
+                    DB::rollBack();
+
+                    return $slotError;
+                }
             }
 
             $booking->update($data);
@@ -205,16 +227,23 @@ class BookingHelper
         try {
             $bookings = Booking::where('client_id', $request->client_id)
                 ->with([
-                    'files',
-                    'state'
+                    'files.latestState',
+                    'state',
+                    'states',
                 ])
                 ->latest()
                 ->get();
 
-            foreach ($bookings as $booking) {
-                $vehicleIds = json_decode($booking->vehicle_ids, true) ?? [];
+            $vehicles = Vehicle::with('files')
+                ->whereIn('veh_id', $bookings->flatMap(fn($booking) => self::vehicleIdsOf($booking))->unique()->values())
+                ->get()
+                ->keyBy('veh_id');
 
-                $booking->vehicles = Vehicle::whereIn('veh_id', $vehicleIds)->get();
+            foreach ($bookings as $booking) {
+                $booking->vehicles = collect(self::vehicleIdsOf($booking))
+                    ->map(fn($vehicleId) => $vehicles->get($vehicleId))
+                    ->filter()
+                    ->values();
             }
 
             return response()->json([
@@ -234,7 +263,7 @@ class BookingHelper
 
     public static function setBookingFileState(Request $request): JsonResponse
     {
-        return DB::transaction(function () use ($request) {
+        $result = DB::transaction(function () use ($request) {
 
             // Find the booking file
             $file = BookingFile::findOrFail($request->file_id);
@@ -250,16 +279,180 @@ class BookingHelper
                 'team_id' => $request->team_id,
                 'state' => $request->name,
                 'code' => $stateId,
+                'note' => $request->note,
                 'create_at' => now(),
                 'update_at' => now(),
             ]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Booking file state created successfully.',
-                'data' => $state,
-            ], 201);
+            return ['file' => $file, 'state' => $state];
         });
+
+        $booking = Booking::where('book_id', $result['file']->book_id)->first();
+
+        if ($booking) {
+            NotificationHelper::bookingFileStateChanged(
+                $booking,
+                $result['file']->file_name,
+                $request->name,
+                $request->note
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Booking file state created successfully.',
+            'data' => $result['state'],
+        ], 201);
+    }
+
+
+    public static function getAvailableSlots(Request $request): JsonResponse
+    {
+        $timezone = config('booking.timezone');
+        $from = $request->filled('from')
+            ? Carbon::parse($request->from, $timezone)->startOfDay()
+            : Carbon::now($timezone)->startOfDay();
+        $days = min((int) $request->input('days', 7), config('booking.max_days'));
+        $to = $from->copy()->addDays($days - 1);
+
+        $taken = self::takenSlots($from->toDateString(), $to->toDateString(), $request->exclude_book_id);
+        $capacity = config('booking.slot_capacity');
+        $now = Carbon::now($timezone);
+        $result = [];
+
+        for ($day = $from->copy(); $day->lte($to); $day->addDay()) {
+            $date = $day->toDateString();
+            $isOpen = in_array($day->dayOfWeekIso, config('booking.operating_days'), true);
+            $slots = [];
+
+            if ($isOpen) {
+                foreach (self::slotTimes() as $time) {
+                    $remaining = max(0, $capacity - ($taken[$date][$time] ?? 0));
+                    $isPast = Carbon::parse($date . ' ' . $time, $timezone)->lte($now);
+
+                    $slots[] = [
+                        'time' => $time,
+                        'available' => !$isPast && $remaining > 0,
+                        'remaining' => $isPast ? 0 : $remaining,
+                    ];
+                }
+            }
+
+            $result[] = [
+                'date' => $date,
+                'day' => $day->format('D'),
+                'is_open' => $isOpen,
+                'slots' => $slots,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Available slots retrieved successfully.',
+            'data' => [
+                'timezone' => $timezone,
+                'slot_minutes' => config('booking.slot_minutes'),
+                'days' => $result,
+            ],
+        ], 200);
+    }
+
+
+    private static function slotError(?string $date, ?string $time, ?string $excludeBookId = null): ?JsonResponse
+    {
+        $timezone = config('booking.timezone');
+        $time = self::normalizeTime($time);
+        $day = Carbon::parse($date, $timezone)->startOfDay();
+        $message = null;
+
+        if (!in_array($day->dayOfWeekIso, config('booking.operating_days'), true)) {
+            $message = 'We are closed on the selected day.';
+        } elseif (!in_array($time, self::slotTimes(), true)) {
+            $message = 'The selected time is outside working hours.';
+        } elseif (Carbon::parse($day->toDateString() . ' ' . $time, $timezone)->lte(Carbon::now($timezone))) {
+            $message = 'The selected time has already passed.';
+        } else {
+            $taken = self::takenSlots($day->toDateString(), $day->toDateString(), $excludeBookId);
+
+            if (($taken[$day->toDateString()][$time] ?? 0) >= config('booking.slot_capacity')) {
+                $message = 'This time slot is fully booked. Please choose another time.';
+            }
+        }
+
+        if (!$message) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => ['time' => [$message]],
+        ], 422);
+    }
+
+
+    private static function slotTimes(): array
+    {
+        $opens = Carbon::createFromFormat('H:i', config('booking.opens_at'));
+        $closes = Carbon::createFromFormat('H:i', config('booking.closes_at'));
+        $times = [];
+
+        for ($slot = $opens->copy(); $slot->lt($closes); $slot->addMinutes(config('booking.slot_minutes'))) {
+            $times[] = $slot->format('H:i');
+        }
+
+        return $times;
+    }
+
+
+    private static function takenSlots(string $from, string $to, ?string $excludeBookId = null): array
+    {
+        $bookings = Booking::with('state')
+            ->whereDate('date', '>=', $from)
+            ->whereDate('date', '<=', $to)
+            ->when($excludeBookId, fn($query) => $query->where('book_id', '!=', $excludeBookId))
+            ->get();
+
+        $taken = [];
+
+        foreach ($bookings as $booking) {
+            if (in_array(strtoupper((string) $booking->state?->name), config('booking.inactive_states'), true)) {
+                continue;
+            }
+
+            $date = Carbon::parse($booking->getRawOriginal('date'))->toDateString();
+            $time = self::normalizeTime($booking->getRawOriginal('time'));
+
+            $taken[$date][$time] = ($taken[$date][$time] ?? 0) + 1;
+        }
+
+        return $taken;
+    }
+
+
+    private static function normalizeTime(?string $time): ?string
+    {
+        if ($time === null || $time === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($time)->format('H:i');
+        } catch (\Throwable $e) {
+            return $time;
+        }
+    }
+
+
+    private static function vehicleIdsOf(Booking $booking): array
+    {
+        $vehicleIds = $booking->vehicle_ids;
+
+        while (is_string($vehicleIds)) {
+            $vehicleIds = json_decode($vehicleIds, true);
+        }
+
+        return array_values(array_filter((array) $vehicleIds));
     }
 
 

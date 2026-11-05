@@ -80,6 +80,8 @@ class VehicleHelper
             ];
         });
 
+        NotificationHelper::vehicleAdded($result['vehicle']);
+
         return response()->json([
             'success' => true,
             'message' => 'Vehicle added successfully.',

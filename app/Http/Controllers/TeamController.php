@@ -17,6 +17,7 @@ class TeamController extends Controller
             'file_id' => 'required|string|exists:booking_files,id',
             'team_id' => 'required|string|exists:teams,team_id',
             'name' => 'required|string',
+            'note' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {

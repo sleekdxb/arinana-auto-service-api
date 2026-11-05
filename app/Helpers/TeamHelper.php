@@ -385,7 +385,7 @@ class TeamHelper
                     'book_id' => $booking->book_id,
                     'team_id' => $request->input('team_id'),
                     'state_id' => $stateId,
-                    'name' => strtoupper($request->input('name')),
+                    'name' => BookingState::normalizeName($request->input('name')),
                     'code' => 'TEAM_4512',
                     'note' => $request->input('note'),
                 ]);
@@ -407,6 +407,12 @@ class TeamHelper
                     'message' => 'Booking not found.',
                 ], 404);
             }
+
+            NotificationHelper::bookingStateChanged(
+                $result['booking'],
+                $result['state']->name,
+                $request->input('note')
+            );
 
             return response()->json([
                 'success' => true,
@@ -451,7 +457,7 @@ class TeamHelper
                     'veh_id' => $vehicle->veh_id,
                     'team_id' => $request->input('team_id'),
                     'state_id' => $stateId,
-                    'name' => strtoupper($request->input('name')),
+                    'name' => BookingState::normalizeName($request->input('name')),
                     'code' => 'TEAM_4512',
                     'note' => $request->input('note'),
                 ]);

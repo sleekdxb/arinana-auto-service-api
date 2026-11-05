@@ -38,7 +38,7 @@ class Booking extends Model
     }
     public function states()
     {
-        return $this->hasMany(BookingState::class, 'book_id', 'book_id'); // state_id is the foreign key
+        return $this->hasMany(BookingState::class, 'book_id', 'book_id')->orderBy('created_at')->orderBy('id'); // state_id is the foreign key
     }
 
 

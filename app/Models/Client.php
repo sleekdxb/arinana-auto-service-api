@@ -20,6 +20,7 @@ class Client extends Authenticatable implements JWTSubject
         'phone',
         'state_id',
         'password',
+        'profile_img',
     ];
 
     protected $hidden = [
@@ -48,6 +49,16 @@ class Client extends Authenticatable implements JWTSubject
         return $this->hasMany(Vehicle::class, 'client_id', 'client_id'); // vend_id is the foreign key
     }
 
+
+    public function notifications()
+    {
+        return $this->hasMany(ClientNotification::class, 'client_id', 'client_id');
+    }
+
+    public function preference()
+    {
+        return $this->hasOne(ClientPreference::class, 'client_id', 'client_id');
+    }
 
     public function bookings()
     {
