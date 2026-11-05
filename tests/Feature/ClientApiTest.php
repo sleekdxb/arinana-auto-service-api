@@ -141,8 +141,8 @@ class ClientApiTest extends TestCase
         $this->assertArrayHasKey('files', $booking['vehicles'][0]);
 
         $files = collect($booking['files'])->keyBy('file_name');
-        $this->assertSame('uploaded', $files['Proof_of_ownership.pdf']['latest_state']['state']);
-        $this->assertSame('rejected', $files['Repair_history.pdf']['latest_state']['state']);
+        $this->assertSame('UPLOADED', $files['Proof_of_ownership.pdf']['latest_state']['state']);
+        $this->assertSame('REJECTED', $files['Repair_history.pdf']['latest_state']['state']);
         $this->assertSame('Document is blurry', $files['Repair_history.pdf']['latest_state']['note']);
     }
 

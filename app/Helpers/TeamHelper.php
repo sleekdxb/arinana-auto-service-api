@@ -591,7 +591,7 @@ class TeamHelper
             BookingFileState::create([
                 'file_id' => $record->id,
                 'team_id' => $request->team_id,
-                'state' => 'approved',
+                'state' => 'APPROVED',
                 'code' => 'CERTIFICATE',
                 'note' => 'Certificate issued',
                 'create_at' => now(),
