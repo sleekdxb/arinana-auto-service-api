@@ -249,7 +249,7 @@ class FileUploadHelper
                     'file_id' => $uuid,
                     'file_category' => $entry['file_category'],
                     'expiry_at' => $expiryAt,
-                    'state' => 'uploaded',
+                    'state' => 'UPLOADED',
                 ];
             }
         }
@@ -284,7 +284,7 @@ class FileUploadHelper
 
                 BookingFileState::create([
                     'file_id' => $upload->id,
-                    'state' => 'uploaded',
+                    'state' => 'UPLOADED',
                     'code' => 'UPLOADED471',
                     'create_at' => $now,
                     'update_at' => $now,
@@ -301,7 +301,7 @@ class FileUploadHelper
 
                 $state = VehicleFileState::create([
                     'file_id' => $entry['file_id'],
-                    'state' => 'uploaded',
+                    'state' => 'UPLOADED',
                     'code' => 'UPLOADED471',
                     'created_at' => $now,
                     'updated_at' => $now,

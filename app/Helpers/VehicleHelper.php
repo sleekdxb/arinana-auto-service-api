@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Booking;
 use App\Models\VehicleState;
+use App\Models\BookingState;
 use App\Models\VehicleFileState;
 
 class VehicleHelper
@@ -215,7 +216,7 @@ class VehicleHelper
         $state = VehicleFileState::create([
             'file_id' => $request->file_id,
             'team_id' => $request->team_id,
-            'state' => $request->name,
+            'state' => BookingState::normalizeName($request->name),
             'code' => $stateCode,
             'create_at' => now(),
             'update_at' => now(),

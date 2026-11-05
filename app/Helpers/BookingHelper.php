@@ -293,7 +293,7 @@ class BookingHelper
             $state = BookingFileState::create([
                 'file_id' => $file->id,
                 'team_id' => $request->team_id,
-                'state' => $request->name,
+                'state' => BookingState::normalizeName($request->name),
                 'code' => $stateId,
                 'note' => $request->note,
                 'create_at' => now(),

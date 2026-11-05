@@ -213,7 +213,7 @@ class AdminApiTest extends TestCase
         $this->post('/api/team/uploadBookingCertificate', $this->team([
             'book_id' => $bookId,
             'certificate' => UploadedFile::fake()->create('cert.pdf', 50, 'application/pdf'),
-        ]))->assertCreated()->assertJsonPath('data.latest_state.state', 'approved');
+        ]))->assertCreated()->assertJsonPath('data.latest_state.state', 'APPROVED');
 
         $file = BookingFile::where('book_id', $bookId)->firstOrFail();
         $this->assertSame('Structural_Safety_Certificate.pdf', $file->file_name);
@@ -222,7 +222,7 @@ class AdminApiTest extends TestCase
 
         $booking = collect($this->postJson('/api/team/getBookings', $this->team([]))->json('data'))->firstWhere('book_id', $bookId);
         $this->assertSame('TEAMTECH1', $booking['technician']['team_id']);
-        $this->assertSame('approved', $booking['files'][0]['latest_state']['state']);
+        $this->assertSame('APPROVED', $booking['files'][0]['latest_state']['state']);
         $this->assertNotNull($booking['estimated_completion_at']);
 
         $client = $this->getJson('/api/booking/getClientBookings?client_id=' . $this->client->client_id)->json('data.0');
@@ -282,7 +282,7 @@ class AdminApiTest extends TestCase
 
         $this->putJson('/api/team/setVehicleFileState', $this->team(['file_id' => (string) $file->id, 'name' => 'approved']))
             ->assertCreated();
-        $this->assertSame('approved', VehicleFileState::where('file_id', $file->id)->value('state'));
+        $this->assertSame('APPROVED', VehicleFileState::where('file_id', $file->id)->value('state'));
     }
 
     public function test_report_analytics_use_real_numbers(): void
