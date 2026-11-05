@@ -78,7 +78,7 @@ class NotificationHelper
             ['booking_ref' => $booking->booking_ref]
         );
 
-        self::deliver($booking, $notification, 'booking_updates', [
+        self::deliver($booking, $notification, 'booking_updates', 'booking_confirmed', [
             'subject' => 'Booking confirmed – ARN-' . $booking->booking_ref,
             'heading' => 'Your booking is confirmed',
             'message' => 'Thanks for booking with us. Please bring your vehicle at the time below.',
@@ -103,8 +103,14 @@ class NotificationHelper
         );
 
         $finished = in_array($name, [BookingState::READY_FOR_PICKUP, BookingState::COMPLETED, 'CERTIFICATE_ISSUED'], true);
+        $event = match ($name) {
+            BookingState::VEHICLE_RECEIVED => 'vehicle_received',
+            BookingState::COMPLETED => 'service_completed',
+            'CERTIFICATE_ISSUED' => 'certificate_available',
+            default => 'status_changes',
+        };
 
-        self::deliver($booking, $notification, $finished ? 'service_completion' : 'service_status_updates', [
+        self::deliver($booking, $notification, $finished ? 'service_completion' : 'service_status_updates', $event, [
             'subject' => $label . ' – ARN-' . $booking->booking_ref,
             'heading' => $label,
             'message' => $message,
@@ -130,9 +136,15 @@ class NotificationHelper
             ['booking_ref' => $booking->booking_ref, 'state' => strtoupper($state), 'file_name' => $fileName]
         );
 
-        $rejected = str_contains(strtolower($state), 'reject');
+        $key = strtolower($state);
+        $rejected = str_contains($key, 'reject');
+        $event = match (true) {
+            str_contains($key, 'upload') => 'reupload_requested',
+            $rejected => 'document_rejected',
+            default => 'status_changes',
+        };
 
-        self::deliver($booking, $notification, 'document_review', [
+        self::deliver($booking, $notification, 'document_review', $event, [
             'subject' => 'Document ' . strtolower($label) . ' – ARN-' . $booking->booking_ref,
             'heading' => 'Document ' . strtolower($label),
             'message' => $message . ($rejected ? ' Please upload a corrected copy from the booking in the app.' : ''),
@@ -142,17 +154,90 @@ class NotificationHelper
     }
 
 
+    public static function etaUpdated(Booking $booking, ?string $note = null): void
+    {
+        $when = $booking->estimated_completion_at
+            ?->timezone(config('booking.timezone'))
+            ->format('D, M j, Y, g:i A');
+        $message = $when
+            ? 'Your vehicle is now expected to be ready by ' . $when . '.'
+            : 'The estimated completion time for your booking has been removed.';
+
+        $notification = self::notify(
+            $booking->client_id,
+            'booking_eta',
+            'Estimated completion updated',
+            $note ?: $message,
+            $booking->book_id,
+            ['booking_ref' => $booking->booking_ref, 'estimated_completion_at' => $booking->estimated_completion_at?->toIso8601String()]
+        );
+
+        self::deliver($booking, $notification, 'service_status_updates', 'status_changes', [
+            'subject' => 'Estimated completion updated – ARN-' . $booking->booking_ref,
+            'heading' => 'Estimated completion updated',
+            'message' => $message,
+            'note' => $note,
+            'status' => null,
+        ]);
+    }
+
+
+    public static function certificateIssued(Booking $booking): void
+    {
+        $message = 'Your structural safety certificate for booking ARN-' . $booking->booking_ref . ' is ready. You can view and download it from the booking in the app.';
+
+        $notification = self::notify(
+            $booking->client_id,
+            'booking_certificate',
+            'Certificate available',
+            $message,
+            $booking->book_id,
+            ['booking_ref' => $booking->booking_ref]
+        );
+
+        self::deliver($booking, $notification, 'service_completion', 'certificate_available', [
+            'subject' => 'Your certificate is ready – ARN-' . $booking->booking_ref,
+            'heading' => 'Your certificate is ready',
+            'message' => $message,
+            'status' => null,
+        ]);
+    }
+
+
+    public static function appointmentReminder(Booking $booking): void
+    {
+        $message = 'Reminder: your ' . ($booking->service_type ?: 'service') . ' is booked for ' . self::scheduleLabel($booking) . '.';
+
+        $notification = self::notify(
+            $booking->client_id,
+            'booking_reminder',
+            'Appointment reminder',
+            $message,
+            $booking->book_id,
+            ['booking_ref' => $booking->booking_ref]
+        );
+
+        self::deliver($booking, $notification, 'booking_updates', 'appointment_reminder', [
+            'subject' => 'Appointment reminder – ARN-' . $booking->booking_ref,
+            'heading' => 'See you soon',
+            'message' => $message,
+            'status' => null,
+        ]);
+    }
+
+
     /**
-     * Email and push go out after the response is sent, each only if the
-     * client allows that channel and this kind of update.
+     * Email and push go out after the response is sent. A channel is used only
+     * if the business sends this event on it (admin Notification Settings) and
+     * the client allows that channel and this kind of update.
      */
-    private static function deliver(Booking $booking, ?ClientNotification $notification, string $category, array $email): void
+    private static function deliver(Booking $booking, ?ClientNotification $notification, string $category, string $event, array $email): void
     {
         if (!$notification) {
             return;
         }
 
-        dispatch(function () use ($booking, $notification, $category, $email) {
+        dispatch(function () use ($booking, $notification, $category, $event, $email) {
             if (isset(self::$delivered[$notification->notification_id])) {
                 return;
             }
@@ -165,11 +250,11 @@ class NotificationHelper
                 return;
             }
 
-            if ($allows('email_enabled')) {
+            if ($allows('email_enabled') && SettingsHelper::allows($event, 'email')) {
                 self::sendEmail($booking, $email);
             }
 
-            if ($allows('push_enabled')) {
+            if ($allows('push_enabled') && SettingsHelper::allows($event, 'push')) {
                 try {
                     PushHelper::sendToClient($booking->client_id, $notification->subject, $notification->data['body'] ?? null, [
                         'notif_id' => $notification->notification_id,

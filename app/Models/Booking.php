@@ -20,11 +20,16 @@ class Booking extends Model
         'time',
         'note',
         'state_id',
+        'estimated_completion_at',
+        'technician_id',
+        'reminder_sent_at',
     ];
     protected $casts = [
         'date' => 'date',
         'time' => 'datetime:H:i',
-        'vehicle_ids' => 'array'
+        'vehicle_ids' => 'array',
+        'estimated_completion_at' => 'datetime',
+        'reminder_sent_at' => 'datetime',
     ];
 
 
@@ -54,6 +59,11 @@ class Booking extends Model
 
         return Vehicle::query()
             ->whereIn('veh_id', $vehicleIds);
+    }
+
+    public function technician()
+    {
+        return $this->belongsTo(Team::class, 'technician_id', 'team_id');
     }
 
     public function customer()

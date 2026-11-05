@@ -21,6 +21,7 @@ class Vehicle extends Model
         'plate_number',
         'mileage',
         'color',
+        'state_id',
     ];
 
     protected $casts = [

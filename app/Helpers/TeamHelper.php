@@ -14,6 +14,10 @@ use App\Models\Booking;
 use App\Models\Vehicle;
 use App\Models\BookingState;
 use App\Models\VehicleState;
+use Carbon\Carbon;
+use App\Models\BookingFileState;
+use App\Models\BookingFile;
+use App\Models\Team;
 
 
 
@@ -33,7 +37,14 @@ class TeamHelper
             $keyword = $request->key_word;
 
             $query->where(function ($q) use ($keyword) {
-                $q->where('name', 'LIKE', "%{$keyword}%")
+                $q->where('first_name', 'LIKE', "%{$keyword}%")
+                    ->orWhere('last_name', 'LIKE', "%{$keyword}%")
+                    ->orWhere(function ($name) use ($keyword) {
+                        [$first, $last] = array_pad(preg_split('/\s+/', trim($keyword), 2), 2, '');
+                        $name->where('first_name', 'LIKE', "%{$first}%")
+                            ->where('last_name', 'LIKE', "%{$last}%");
+                    })
+                    ->orWhere('business_name', 'LIKE', "%{$keyword}%")
                     ->orWhere('email', 'LIKE', "%{$keyword}%")
                     ->orWhere('phone', 'LIKE', "%{$keyword}%");
             });
@@ -41,7 +52,7 @@ class TeamHelper
 
         // Customer type filter
         if ($request->filled('customer_type')) {
-            $query->where('customer_type', $request->customer_type);
+            $query->where('account_type', $request->customer_type);
         }
 
         // Status filter
@@ -107,114 +118,96 @@ class TeamHelper
 
     public static function getReportAnalytics(Request $request): JsonResponse
     {
-        // Fetch all bookings. No team_id filtering.
-        $bookings = Booking::query();
+        $bookings = Booking::with(['state', 'states', 'customer:id,client_id,account_type'])->get();
+        $total = $bookings->count();
+        $inactive = ['COMPLETED', 'CANCELLED', 'CANCELED', 'REJECTED'];
+        $stateOf = fn($booking) => strtoupper((string) $booking->state?->name);
+        $percent = fn(int $count) => ($total > 0 ? round($count / $total * 100, 2) : 0) . '%';
 
-        $totalBookings = (clone $bookings)->count();
+        $completed = $bookings->filter(fn($b) => $stateOf($b) === BookingState::COMPLETED);
+        $turnaround = fn($group) => self::averageTurnaround($group);
 
-        $totalCustomers = Client::count();
-
-        // Booking counts by vehicle state.
-        // Change these state names to match your database.
-        $activeBookings = 42;
-
-        //(clone $bookings)
-        // ->whereHas('vehicle.state', function ($query) {
-        //     $query->where('name', 'Active');
-        //  })
-        //  ->count();
-
-        $completedJobs = 20;
-
-        //  (clone $bookings)
-        //  ->whereHas('vehicle.state', function ($query) {
-        //      $query->where('name', 'Completed');
-        ///   })
-        //  ->count();
-
-        // Structural Safety bookings.
-        $totalStructuralSafety = (clone $bookings)
-            ->where('service', 'Structural Safety')
+        $certificates = BookingFile::where('file_name', 'like', 'Structural_Safety_Certificate%')
+            ->distinct()
+            ->pluck('book_id')
+            ->merge($bookings->filter(fn($b) => $b->states->contains('name', 'CERTIFICATE_ISSUED'))->pluck('book_id'))
+            ->unique()
             ->count();
 
-        // Customer percentages by type.
-        $ownerCount = Client::where('account_type', 'Owner')->count();
-        $dealerCount = Client::where('account_type', 'Dealer')->count();
+        $byType = $bookings->groupBy(fn($b) => strtolower((string) $b->customer?->account_type));
+        $byService = $bookings->filter(fn($b) => filled($b->service))->groupBy('service')->sortKeys();
 
-        $clientPercentage = function (int $count) use ($totalCustomers) {
-            return $totalCustomers > 0
-                ? round(($count / $totalCustomers) * 100, 2)
-                : 0;
-        };
-
-        // Dynamic booking counts and percentages by service.
-        $serviceCounts = (clone $bookings)
-            ->select('service', DB::raw('COUNT(*) as total_bookings'))
-            ->whereNotNull('service')
-            ->where('service', '!=', '')
-            ->groupBy('service')
-            ->orderBy('service')
-            ->get();
-
-        $bookingsByServiceType = $serviceCounts->map(function ($item) use ($totalBookings) {
-            return [
-                'service' => $item->service,
-                'percentage' => $totalBookings > 0
-                    ? round(($item->total_bookings / $totalBookings) * 100, 2)
-                    : 0,
-            ];
-        })->values();
-
-        // Booking volume grouped by month using created_at.
-        $monthlyCounts = (clone $bookings)
-            ->selectRaw('MONTH(created_at) as month_number, COUNT(*) as total_bookings')
-            ->whereNotNull('created_at')
-            ->groupByRaw('MONTH(created_at)')
-            ->orderByRaw('MONTH(created_at)')
-            ->get();
-
-        $bookingsByMonth = $monthlyCounts->mapWithKeys(function ($item) {
-            return [
-                date('M', mktime(0, 0, 0, (int) $item->month_number, 1))
-                => (int) $item->total_bookings,
-            ];
-        });
-
-        // Turnaround distribution by dynamic service type.
-        $turnaroundDistribution = $serviceCounts->map(function ($item) {
-            return [
-                'service_type' => $item->service,
-                'total_bookings' => (int) $item->total_bookings,
-                'completed_bookings' => 24, // Dummy value for now.
-                'average_turnaround_time' => '4 days', // Dummy value.
-            ];
-        })->values();
+        $months = [];
+        foreach (range(11, 0) as $ago) {
+            $months[now()->startOfMonth()->subMonths($ago)->format('Y-m')] = 0;
+        }
+        foreach ($bookings as $booking) {
+            $key = $booking->created_at?->format('Y-m');
+            if ($key && array_key_exists($key, $months)) {
+                $months[$key]++;
+            }
+        }
+        $months = collect($months);
 
         return response()->json([
             'success' => true,
             'data' => [
                 'figCard' => [
-                    'total_bookings' => $totalBookings,
-                    'active_bookings' => $activeBookings,
-                    'completed_jobs' => $completedJobs,
-                    'average_turnaround_time' => '4 days',
-                    'total_structural_safety' => $totalStructuralSafety,
-                    'total_users' => $totalCustomers,
+                    'total_bookings' => $total,
+                    'active_bookings' => $bookings->reject(fn($b) => in_array($stateOf($b), $inactive, true))->count(),
+                    'completed_jobs' => $completed->count(),
+                    'average_turnaround_time' => $turnaround($completed),
+                    'total_structural_safety' => $certificates,
+                    'total_users' => Client::count(),
                 ],
-
                 'bookings_by_client_type' => [
-                    'car_owner' => $clientPercentage($ownerCount) . '%',
-                    'dealer' => $clientPercentage($dealerCount) . '%',
+                    'car_owner' => $percent(($byType['individual'] ?? collect())->count() + ($byType['owner'] ?? collect())->count()),
+                    'dealer' => $percent(($byType['dealer'] ?? collect())->count()),
                 ],
+                'bookings_by_service_type' => $byService->map(fn($group, $service) => [
+                    'service' => $service,
+                    'percentage' => $total > 0 ? round($group->count() / $total * 100, 2) : 0,
+                ])->values(),
+                'booking_volum_over_time' => $months->mapWithKeys(
+                    fn($count, $key) => [\Carbon\Carbon::createFromFormat('Y-m', $key)->format('M') => $count]
+                ),
+                'turnaround_time_distribution_by_service_type' => $byService->map(function ($group, $service) use ($stateOf, $turnaround) {
+                    $done = $group->filter(fn($b) => $stateOf($b) === BookingState::COMPLETED);
 
-                'bookings_by_service_type' => $bookingsByServiceType,
-
-                'booking_volum_over_time' => $bookingsByMonth,
-
-                'turnaround_time_distribution_by_service_type' =>
-                    $turnaroundDistribution,
+                    return [
+                        'service_type' => $service,
+                        'total_bookings' => $group->count(),
+                        'completed_bookings' => $done->count(),
+                        'average_turnaround_time' => $turnaround($done),
+                    ];
+                })->values(),
             ],
         ]);
+    }
+
+
+    /**
+     * From when the vehicle was received (or booked, if never marked received)
+     * to when the booking was completed.
+     */
+    private static function averageTurnaround($bookings): string
+    {
+        $hours = $bookings->map(function ($booking) {
+            $done = $booking->states->where('name', BookingState::COMPLETED)->last()?->created_at;
+            $start = $booking->states->firstWhere('name', BookingState::VEHICLE_RECEIVED)?->created_at ?? $booking->created_at;
+
+            return $done && $start ? max(0, $start->diffInMinutes($done)) / 60 : null;
+        })->filter(fn($value) => $value !== null);
+
+        if ($hours->isEmpty()) {
+            return 'N/A';
+        }
+
+        $average = $hours->avg();
+
+        return $average < 24
+            ? round($average, 1) . ' hours'
+            : round($average / 24, 1) . ' days';
     }
 
 
@@ -222,10 +215,11 @@ class TeamHelper
     {
         try {
             $query = Booking::with([
-                'files',
+                'files.latestState',
                 'states',
                 'state',
                 'customer',
+                'technician:id,team_id,full_name,email,phone,account_type',
             ]);
 
             /*
@@ -288,7 +282,9 @@ class TeamHelper
                         'customer',
                         function ($customerQuery) use ($search) {
                             $customerQuery
-                                ->where('name', 'like', $search)
+                                ->where('first_name', 'like', $search)
+                                ->orWhere('last_name', 'like', $search)
+                                ->orWhere('business_name', 'like', $search)
                                 ->orWhere('email', 'like', $search)
                                 ->orWhere('phone', 'like', $search);
                         }
@@ -497,5 +493,206 @@ class TeamHelper
                 'message' => 'Failed to update vehicle state.',
             ], 500);
         }
+    }
+
+
+    public static function setBookingEta(Request $request): JsonResponse
+    {
+        $booking = Booking::where('book_id', $request->book_id)->first();
+
+        if (!$booking) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Booking not found.',
+            ], 404);
+        }
+
+        $eta = $request->filled('estimated_completion_at')
+            ? Carbon::parse($request->estimated_completion_at, config('booking.timezone'))->utc()
+            : null;
+
+        $booking->update(['estimated_completion_at' => $eta]);
+        NotificationHelper::etaUpdated($booking->fresh(), $request->input('note'));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Estimated completion updated successfully.',
+            'data' => $booking->fresh(),
+        ], 200);
+    }
+
+
+    public static function getTechnicians(Request $request): JsonResponse
+    {
+        $technicians = Team::select('team_id', 'full_name', 'email', 'phone', 'account_type')
+            ->orderBy('full_name')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Technicians retrieved successfully.',
+            'data' => $technicians,
+        ], 200);
+    }
+
+
+    public static function assignTechnician(Request $request): JsonResponse
+    {
+        $booking = Booking::where('book_id', $request->book_id)->first();
+
+        if (!$booking) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Booking not found.',
+            ], 404);
+        }
+
+        $booking->update(['technician_id' => $request->input('technician_id') ?: null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $booking->technician_id ? 'Technician assigned successfully.' : 'Technician removed.',
+            'data' => $booking->fresh()->load('technician:id,team_id,full_name,email,phone,account_type'),
+        ], 200);
+    }
+
+
+    /**
+     * Stored as a booking file named Structural_Safety_Certificate.<ext>, so
+     * the app lists it with the booking's documents.
+     */
+    public static function uploadBookingCertificate(Request $request): JsonResponse
+    {
+        $booking = Booking::where('book_id', $request->book_id)->first();
+
+        if (!$booking) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Booking not found.',
+            ], 404);
+        }
+
+        $file = $request->file('certificate');
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+        $path = 'booking/Certificates/' . $booking->book_id . '/' . Str::uuid() . '.' . $extension;
+
+        Storage::disk('hostinger')->put($path, fopen($file->getRealPath(), 'r'));
+
+        $record = DB::transaction(function () use ($booking, $file, $extension, $path, $request) {
+            $record = BookingFile::create([
+                'book_id' => $booking->book_id,
+                'client_id' => $booking->client_id,
+                'file_name' => 'Structural_Safety_Certificate.' . $extension,
+                'file_size' => $file->getSize(),
+                'file_type' => $file->getMimeType(),
+                'file_url' => $path,
+            ]);
+
+            BookingFileState::create([
+                'file_id' => $record->id,
+                'team_id' => $request->team_id,
+                'state' => 'approved',
+                'code' => 'CERTIFICATE',
+                'note' => 'Certificate issued',
+                'create_at' => now(),
+                'update_at' => now(),
+            ]);
+
+            return $record;
+        });
+
+        NotificationHelper::certificateIssued($booking);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Certificate uploaded successfully.',
+            'data' => $record->load('latestState'),
+        ], 201);
+    }
+
+
+    public static function updateClient(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $data = array_filter(
+            $request->only(['first_name', 'last_name', 'phone', 'email', 'account_type', 'business_name', 'registration_number']),
+            fn($value) => $value !== null && $value !== ''
+        );
+
+        if (isset($data['email'])) {
+            $data['email'] = strtolower(trim($data['email']));
+            $data['hashed_email'] = hash('sha256', $data['email']);
+
+            if (Client::where('hashed_email', $data['hashed_email'])->where('client_id', '!=', $client->client_id)->exists()) {
+                return self::fieldError('email', 'This email is already in use.');
+            }
+        }
+
+        if (isset($data['phone']) && Client::where('phone', $data['phone'])->where('client_id', '!=', $client->client_id)->exists()) {
+            return self::fieldError('phone', 'This phone number is already in use.');
+        }
+
+        if (isset($data['account_type'])) {
+            $data['account_type'] = strtolower($data['account_type']);
+        }
+
+        $client->update($data);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Client updated successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+
+
+    public static function reactivateAccount(Request $request): JsonResponse
+    {
+        return DB::transaction(function () use ($request) {
+            $client = Client::where('client_id', $request->client_id)->first();
+
+            do {
+                $stateId = 'STATE-' . strtoupper(Str::random(8));
+            } while (ClientStatus::where('state_id', $stateId)->exists());
+
+            $status = ClientStatus::create([
+                'client_id' => $client->client_id,
+                'team_id' => $request->team_id,
+                'state_id' => $stateId,
+                'name' => 'Active',
+                'code' => 'ACTIVE',
+                'note' => $request->input('note') ?: 'Account reactivated',
+            ]);
+
+            $client->state_id = $stateId;
+            $client->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Client account reactivated successfully.',
+                'data' => [
+                    'client' => $client->fresh(),
+                    'status' => $status,
+                ],
+            ], 200);
+        });
+    }
+
+
+    private static function fieldError(string $field, string $message): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => [$field => [$message]],
+        ], 422);
     }
 }

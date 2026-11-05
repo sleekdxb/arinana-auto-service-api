@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Booking;
 use App\Models\VehicleState;
+use App\Models\VehicleFileState;
 
 class VehicleHelper
 {
@@ -208,10 +209,10 @@ class VehicleHelper
         // Generate a unique state code
         do {
             $stateCode = 'STATE-' . strtoupper(Str::random(8));
-        } while (BookingFileState::where('code', $stateCode)->exists());
+        } while (VehicleFileState::where('code', $stateCode)->exists());
 
         // Create vehicle file state
-        $state = BookingFileState::create([
+        $state = VehicleFileState::create([
             'file_id' => $request->file_id,
             'team_id' => $request->team_id,
             'state' => $request->name,

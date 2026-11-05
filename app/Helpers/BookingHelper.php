@@ -134,6 +134,14 @@ class BookingHelper
             }
 
             if (isset($data['date']) || isset($data['time'])) {
+                $cutoffError = self::cutoffError($booking);
+
+                if ($cutoffError) {
+                    DB::rollBack();
+
+                    return $cutoffError;
+                }
+
                 $slotError = self::slotError(
                     $data['date'] ?? $booking->date->toDateString(),
                     $data['time'] ?? substr((string) $booking->getRawOriginal('time'), 0, 5),
@@ -181,6 +189,14 @@ class BookingHelper
                     'success' => false,
                     'message' => 'Booking not found.'
                 ], 404);
+            }
+
+            $cutoffError = self::cutoffError($booking);
+
+            if ($cutoffError) {
+                DB::rollBack();
+
+                return $cutoffError;
             }
 
             // Get all files belonging to the booking
@@ -316,19 +332,20 @@ class BookingHelper
         $to = $from->copy()->addDays($days - 1);
 
         $taken = self::takenSlots($from->toDateString(), $to->toDateString(), $request->exclude_book_id);
-        $capacity = config('booking.slot_capacity');
-        $now = Carbon::now($timezone);
+        $settings = SettingsHelper::availability();
+        $capacity = (int) $settings['slot_capacity'];
+        $earliest = self::earliestBookable($settings);
         $result = [];
 
         for ($day = $from->copy(); $day->lte($to); $day->addDay()) {
             $date = $day->toDateString();
-            $isOpen = in_array($day->dayOfWeekIso, config('booking.operating_days'), true);
+            $isOpen = in_array($day->dayOfWeekIso, $settings['operating_days'], true);
             $slots = [];
 
             if ($isOpen) {
-                foreach (self::slotTimes() as $time) {
+                foreach (self::slotTimes($settings) as $time) {
                     $remaining = max(0, $capacity - ($taken[$date][$time] ?? 0));
-                    $isPast = Carbon::parse($date . ' ' . $time, $timezone)->lte($now);
+                    $isPast = Carbon::parse($date . ' ' . $time, $timezone)->lt($earliest);
 
                     $slots[] = [
                         'time' => $time,
@@ -351,7 +368,8 @@ class BookingHelper
             'message' => 'Available slots retrieved successfully.',
             'data' => [
                 'timezone' => $timezone,
-                'slot_minutes' => config('booking.slot_minutes'),
+                'slot_minutes' => (int) $settings['slot_minutes'],
+                'change_cutoff_hours' => (int) $settings['change_cutoff_hours'],
                 'days' => $result,
             ],
         ], 200);
@@ -361,20 +379,24 @@ class BookingHelper
     private static function slotError(?string $date, ?string $time, ?string $excludeBookId = null): ?JsonResponse
     {
         $timezone = config('booking.timezone');
+        $settings = SettingsHelper::availability();
         $time = self::normalizeTime($time);
         $day = Carbon::parse($date, $timezone)->startOfDay();
+        $at = Carbon::parse($day->toDateString() . ' ' . $time, $timezone);
         $message = null;
 
-        if (!in_array($day->dayOfWeekIso, config('booking.operating_days'), true)) {
+        if (!in_array($day->dayOfWeekIso, $settings['operating_days'], true)) {
             $message = 'We are closed on the selected day.';
-        } elseif (!in_array($time, self::slotTimes(), true)) {
+        } elseif (!in_array($time, self::slotTimes($settings), true)) {
             $message = 'The selected time is outside working hours.';
-        } elseif (Carbon::parse($day->toDateString() . ' ' . $time, $timezone)->lte(Carbon::now($timezone))) {
+        } elseif ($at->lte(Carbon::now($timezone))) {
             $message = 'The selected time has already passed.';
+        } elseif ($at->lt(self::earliestBookable($settings))) {
+            $message = 'This time is too soon to book. Please choose a later time.';
         } else {
             $taken = self::takenSlots($day->toDateString(), $day->toDateString(), $excludeBookId);
 
-            if (($taken[$day->toDateString()][$time] ?? 0) >= config('booking.slot_capacity')) {
+            if (($taken[$day->toDateString()][$time] ?? 0) >= (int) $settings['slot_capacity']) {
                 $message = 'This time slot is fully booked. Please choose another time.';
             }
         }
@@ -391,13 +413,52 @@ class BookingHelper
     }
 
 
-    private static function slotTimes(): array
+    private static function earliestBookable(array $settings): Carbon
     {
-        $opens = Carbon::createFromFormat('H:i', config('booking.opens_at'));
-        $closes = Carbon::createFromFormat('H:i', config('booking.closes_at'));
+        return Carbon::now(config('booking.timezone'))->addMinutes((int) $settings['lead_time_minutes']);
+    }
+
+
+    /**
+     * Customers can't move or cancel a booking within the cutoff the team set.
+     */
+    private static function cutoffError(Booking $booking): ?JsonResponse
+    {
+        $hours = (int) SettingsHelper::availability()['change_cutoff_hours'];
+
+        if ($hours <= 0) {
+            return null;
+        }
+
+        $timezone = config('booking.timezone');
+        $at = Carbon::parse(
+            $booking->date->toDateString() . ' ' . substr((string) $booking->getRawOriginal('time'), 0, 5),
+            $timezone
+        );
+
+        $now = Carbon::now($timezone);
+
+        if ($at->lte($now) || $now->copy()->addHours($hours)->lt($at)) {
+            return null;
+        }
+
+        $message = 'Bookings can only be changed or cancelled at least ' . $hours . ' hours before the appointment. Please contact us.';
+
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => ['date' => [$message]],
+        ], 422);
+    }
+
+
+    private static function slotTimes(array $settings): array
+    {
+        $opens = Carbon::createFromFormat('H:i', $settings['opens_at']);
+        $closes = Carbon::createFromFormat('H:i', $settings['closes_at']);
         $times = [];
 
-        for ($slot = $opens->copy(); $slot->lt($closes); $slot->addMinutes(config('booking.slot_minutes'))) {
+        for ($slot = $opens->copy(); $slot->lt($closes); $slot->addMinutes((int) $settings['slot_minutes'])) {
             $times[] = $slot->format('H:i');
         }
 
