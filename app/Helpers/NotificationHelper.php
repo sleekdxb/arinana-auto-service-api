@@ -7,13 +7,22 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 use App\Models\Booking;
 use App\Models\BookingState;
+use App\Mail\BookingUpdateMail;
+use App\Models\Client;
+use App\Models\ClientEmail;
 use App\Models\ClientNotification;
 use App\Models\ClientPreference;
+use App\Models\ClientSession;
+use App\Models\Service;
 use App\Models\Vehicle;
+use Illuminate\Support\Facades\Mail;
 
 
 class NotificationHelper
 {
+
+    /** Notifications already sent in this process, so a delivery never runs twice. */
+    private static array $delivered = [];
 
     public static function notify(
         string $clientId,
@@ -60,32 +69,48 @@ class NotificationHelper
 
     public static function bookingPlaced(Booking $booking): void
     {
-        $when = $booking->date?->format('M j, Y');
-        $time = substr((string) $booking->getRawOriginal('time'), 0, 5);
-
-        self::notify(
+        $notification = self::notify(
             $booking->client_id,
             'booking_placed',
             'Booking Confirmed!',
-            trim(($booking->service_type ?: 'Your service') . ' booked for ' . $when . ($time ? ', ' . $time : '')),
+            trim(($booking->service_type ?: 'Your service') . ' booked for ' . self::scheduleLabel($booking)),
             $booking->book_id,
             ['booking_ref' => $booking->booking_ref]
         );
+
+        self::deliver($booking, $notification, 'booking_updates', [
+            'subject' => 'Booking confirmed – ARN-' . $booking->booking_ref,
+            'heading' => 'Your booking is confirmed',
+            'message' => 'Thanks for booking with us. Please bring your vehicle at the time below.',
+            'status' => BookingState::LABELS[BookingState::PLACED],
+        ]);
     }
 
 
     public static function bookingStateChanged(Booking $booking, string $state, ?string $note = null): void
     {
-        $label = self::stateLabel($state);
+        $name = BookingState::normalizeName($state);
+        $label = self::stateLabel($name);
+        $message = self::statusMessage($booking, $name);
 
-        self::notify(
+        $notification = self::notify(
             $booking->client_id,
             'booking_status',
             $label,
-            $note ?: 'Your booking ARN-' . $booking->booking_ref . ' is now ' . strtolower($label) . '.',
+            $note ?: $message,
             $booking->book_id,
-            ['booking_ref' => $booking->booking_ref, 'state' => strtoupper($state)]
+            ['booking_ref' => $booking->booking_ref, 'state' => $name]
         );
+
+        $finished = in_array($name, [BookingState::READY_FOR_PICKUP, BookingState::COMPLETED, 'CERTIFICATE_ISSUED'], true);
+
+        self::deliver($booking, $notification, $finished ? 'service_completion' : 'service_status_updates', [
+            'subject' => $label . ' – ARN-' . $booking->booking_ref,
+            'heading' => $label,
+            'message' => $message,
+            'note' => $note,
+            'status' => $label,
+        ]);
     }
 
 
@@ -94,15 +119,150 @@ class NotificationHelper
         $document = pathinfo($fileName, PATHINFO_FILENAME);
         $document = str_replace('_', ' ', $document);
         $label = ucfirst(strtolower($state));
+        $message = $document . ' for booking ARN-' . $booking->booking_ref . ' was ' . strtolower($state) . '.';
 
-        self::notify(
+        $notification = self::notify(
             $booking->client_id,
             'booking_document',
             'Document ' . $label,
-            $note ?: $document . ' for booking ARN-' . $booking->booking_ref . ' was ' . strtolower($state) . '.',
+            $note ?: $message,
             $booking->book_id,
             ['booking_ref' => $booking->booking_ref, 'state' => strtoupper($state), 'file_name' => $fileName]
         );
+
+        $rejected = str_contains(strtolower($state), 'reject');
+
+        self::deliver($booking, $notification, 'document_review', [
+            'subject' => 'Document ' . strtolower($label) . ' – ARN-' . $booking->booking_ref,
+            'heading' => 'Document ' . strtolower($label),
+            'message' => $message . ($rejected ? ' Please upload a corrected copy from the booking in the app.' : ''),
+            'note' => $note,
+            'status' => null,
+        ]);
+    }
+
+
+    /**
+     * Email and push go out after the response is sent, each only if the
+     * client allows that channel and this kind of update.
+     */
+    private static function deliver(Booking $booking, ?ClientNotification $notification, string $category, array $email): void
+    {
+        if (!$notification) {
+            return;
+        }
+
+        dispatch(function () use ($booking, $notification, $category, $email) {
+            if (isset(self::$delivered[$notification->notification_id])) {
+                return;
+            }
+
+            self::$delivered[$notification->notification_id] = true;
+            $preference = ClientPreference::firstWhere('client_id', $booking->client_id);
+            $allows = fn(string $toggle) => (bool) ($preference?->{$toggle} ?? ClientPreference::DEFAULTS[$toggle]);
+
+            if (!$allows($category)) {
+                return;
+            }
+
+            if ($allows('email_enabled')) {
+                self::sendEmail($booking, $email);
+            }
+
+            if ($allows('push_enabled')) {
+                try {
+                    PushHelper::sendToClient($booking->client_id, $notification->subject, $notification->data['body'] ?? null, [
+                        'notif_id' => $notification->notification_id,
+                        'type' => $notification->type,
+                        'ref_id' => $notification->notifiable_id,
+                    ]);
+                } catch (\Throwable $e) {
+                    \Log::error('Push Delivery Error: ' . $e->getMessage());
+                }
+            }
+        })->afterResponse();
+    }
+
+
+    private static function sendEmail(Booking $booking, array $email): void
+    {
+        $client = Client::where('client_id', $booking->client_id)->first();
+
+        if (!$client || !$client->email) {
+            return;
+        }
+
+        $record = null;
+
+        try {
+            $record = ClientEmail::create([
+                'receiver_id' => $client->client_id,
+                'mail_id' => 'MAIL' . strtoupper(Str::random(12)),
+                'subject' => $email['subject'],
+                'message' => $email['message'] ?? '',
+                'is_sent' => false,
+            ]);
+
+            Mail::to($client->email)->send(new BookingUpdateMail($email['subject'], [
+                'name' => trim($client->first_name) ?: 'there',
+                'heading' => $email['heading'],
+                'message' => $email['message'] ?? null,
+                'note' => $email['note'] ?? null,
+                'status' => $email['status'] ?? null,
+                'rows' => self::bookingRows($booking),
+            ]));
+
+            $record->update(['is_sent' => true]);
+        } catch (\Throwable $e) {
+            \Log::error('Booking Email Error: ' . $e->getMessage());
+        }
+    }
+
+
+    private static function bookingRows(Booking $booking): array
+    {
+        $service = Service::where('ser_id', $booking->service)->value('name');
+        $vehicle = Vehicle::whereIn('veh_id', (array) ($booking->vehicle_ids ?? []))->first();
+
+        return array_values(array_filter([
+            ['Booking reference', 'ARN-' . $booking->booking_ref],
+            ['Service', trim(implode(' – ', array_unique(array_filter([$service, $booking->service_type]))))],
+            $vehicle ? ['Vehicle', self::vehicleLabel($vehicle) . ($vehicle->plate_number ? ' (' . $vehicle->plate_number . ')' : '')] : null,
+            ['Date & time', self::scheduleLabel($booking)],
+        ], fn($row) => $row && $row[1] !== ''));
+    }
+
+
+    private static function scheduleLabel(Booking $booking): string
+    {
+        $date = $booking->date?->format('D, M j, Y');
+        $time = substr((string) $booking->getRawOriginal('time'), 0, 5);
+
+        if ($time) {
+            try {
+                $time = \Carbon\Carbon::createFromFormat('H:i', $time)->format('g:i A');
+            } catch (\Throwable $e) {
+            }
+        }
+
+        return trim($date . ($time ? ', ' . $time : ''));
+    }
+
+
+    private static function statusMessage(Booking $booking, string $name): string
+    {
+        $inspection = str_contains(strtolower((string) $booking->service_type), 'structural');
+
+        return match ($name) {
+            BookingState::PLACED => 'Your booking is confirmed.',
+            BookingState::VEHICLE_RECEIVED => 'We have received your vehicle and will start work soon.',
+            BookingState::IN_PROGRESS => $inspection ? 'Your vehicle is currently being inspected.' : 'Your vehicle is currently being serviced.',
+            BookingState::READY_FOR_PICKUP => 'Your vehicle is ready for pickup.',
+            BookingState::COMPLETED => 'Your booking is complete. Thank you for choosing Ariana Auto Service.',
+            'DOCUMENTS_APPROVED' => 'Your documents have been approved.',
+            'CERTIFICATE_ISSUED' => 'Your structural safety certificate has been issued.',
+            default => 'Your booking ARN-' . $booking->booking_ref . ' is now ' . strtolower(self::stateLabel($name)) . '.',
+        };
     }
 
 
@@ -172,6 +332,40 @@ class NotificationHelper
                 'message' => 'Failed to update notifications.',
             ], 500);
         }
+    }
+
+
+    /**
+     * A token moves to the latest session that reports it, so a shared
+     * device never gets another account's pushes.
+     */
+    public static function updatePushToken(Request $request): JsonResponse
+    {
+        $session = ClientSession::where('client_id', $request->client_id)
+            ->where('session_id', $request->session_id)
+            ->first();
+
+        if (!$session) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Session not found.',
+            ], 404);
+        }
+
+        $token = $request->filled('fcm_token') ? $request->fcm_token : null;
+
+        if ($token) {
+            ClientSession::where('fcm_token', $token)
+                ->where('session_id', '!=', $session->session_id)
+                ->update(['fcm_token' => null]);
+        }
+
+        ClientSession::where('session_id', $session->session_id)->update(['fcm_token' => $token]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Push token updated.',
+        ], 200);
     }
 
 

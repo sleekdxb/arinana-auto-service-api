@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'upload_base_url' => rtrim(env('UPLOAD_BASE_URL', 'https://arianaautoservice.com/Files'), '/'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

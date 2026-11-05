@@ -33,7 +33,7 @@ class FileUploadHelper
         $details = [];
 
         $disk = Storage::disk('hostinger');
-        $uploadBaseUrl = rtrim(env('UPLOAD_BASE_URL', ''), '/');
+        $uploadBaseUrl = config('filesystems.upload_base_url');
         $profileImageUrl = null;
         $booking = null;
 
