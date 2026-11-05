@@ -130,7 +130,7 @@ class ClientApiTest extends TestCase
         $this->assertSame('IN_PROGRESS', $booking['state']['name']);
         $this->assertSame(
             'Service in Progress',
-            \App\Models\ClientNotification::where('type', 'booking_status')->latest('id')->first()->title
+            \App\Models\ClientNotification::where('type', 'booking_status')->latest('id')->first()->subject
         );
         $this->assertSame('READY_FOR_PICKUP', BookingState::normalizeName('Ready for Pickup'));
         $this->assertSame('PLACED', BookingState::normalizeName('Booked'));
@@ -214,6 +214,9 @@ class ClientApiTest extends TestCase
 
         $this->assertSame(['booking_placed', 'vehicle_added'], array_column($response->json('data.data'), 'type'));
         $this->assertSame('New Vehicle Added!', $response->json('data.data.1.title'));
+        $this->assertSame('2021 Toyota Corolla - Black has been added to your vehicles.', $response->json('data.data.1.body'));
+        $this->assertSame(Vehicle::first()->veh_id, $response->json('data.data.1.ref_id'));
+        $this->assertFalse($response->json('data.data.1.read'));
 
         $firstId = $response->json('data.data.0.notif_id');
 

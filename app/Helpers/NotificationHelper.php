@@ -26,16 +26,16 @@ class NotificationHelper
         try {
             do {
                 $notifId = 'NOTIF' . strtoupper(Str::random(12));
-            } while (ClientNotification::where('notif_id', $notifId)->exists());
+            } while (ClientNotification::where('notification_id', $notifId)->exists());
 
             return ClientNotification::create([
-                'notif_id' => $notifId,
+                'notification_id' => $notifId,
                 'client_id' => $clientId,
+                'notifiable_id' => $refId,
                 'type' => $type,
-                'title' => $title,
-                'body' => $body,
-                'ref_id' => $refId,
-                'data' => $data ?: null,
+                'subject' => $title,
+                'data' => ['body' => $body] + $data,
+                'read' => false,
             ]);
 
         } catch (\Throwable $e) {
@@ -111,7 +111,7 @@ class NotificationHelper
         try {
             $query = ClientNotification::where('client_id', $request->client_id);
 
-            $unreadCount = (clone $query)->whereNull('read_at')->count();
+            $unreadCount = (clone $query)->where('read', false)->count();
 
             $notifications = $query
                 ->orderByDesc('id')
@@ -120,7 +120,8 @@ class NotificationHelper
                     ['*'],
                     'page',
                     $request->input('page', 1)
-                );
+                )
+                ->through(fn(ClientNotification $notification) => $notification->toApi());
 
             return response()->json([
                 'success' => true,
@@ -144,13 +145,13 @@ class NotificationHelper
     {
         try {
             $query = ClientNotification::where('client_id', $request->client_id)
-                ->whereNull('read_at');
+                ->where('read', false);
 
             if ($request->filled('notif_ids')) {
-                $query->whereIn('notif_id', $request->notif_ids);
+                $query->whereIn('notification_id', $request->notif_ids);
             }
 
-            $updated = $query->update(['read_at' => now()]);
+            $updated = $query->update(['read' => true, 'read_at' => now()]);
 
             return response()->json([
                 'success' => true,
@@ -158,7 +159,7 @@ class NotificationHelper
                 'data' => [
                     'updated' => $updated,
                     'unread_count' => ClientNotification::where('client_id', $request->client_id)
-                        ->whereNull('read_at')
+                        ->where('read', false)
                         ->count(),
                 ],
             ], 200);
