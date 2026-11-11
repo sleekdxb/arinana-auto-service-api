@@ -410,7 +410,9 @@ class ClientAuthHelper
 
             // 2. Delete the Session from Database
             $sessionId = $request->input('session_id');
-            $deleted = ClientSession::where('session_id', $sessionId)->delete();
+            $deleted = ClientSession::where('session_id', $sessionId)
+                ->where('client_id', $request->attributes->get('client')->client_id)
+                ->delete();
 
             if (!$deleted) {
                 return response()->json([
@@ -588,24 +590,10 @@ class ClientAuthHelper
 
     public static function deleteClient(Request $request): JsonResponse
     {
+        $client = $request->attributes->get('client');
+
         try {
-            $client = Client::where('client_id', $request->input('client_id'))
-                ->first();
-
-            if (!$client) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Client not found.',
-                ], 404);
-            }
-
-            $client->delete();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Client deleted successfully.',
-            ], 200);
-
+            ClientDeletionHelper::delete($client);
         } catch (\Throwable $e) {
             \Log::error('Delete Client Error: ' . $e->getMessage());
 
@@ -614,6 +602,16 @@ class ClientAuthHelper
                 'message' => 'Failed to delete client.',
             ], 500);
         }
+
+        try {
+            JWTAuth::invalidate($request->bearerToken());
+        } catch (\Throwable $e) {
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Client deleted successfully.',
+        ], 200);
     }
 
 
