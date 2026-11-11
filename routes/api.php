@@ -29,11 +29,11 @@ Route::prefix('client')->group(function () {
     Route::post('/register', [ClientAuthController::class, 'register']);
     Route::put('/reset_password', [ClientAuthController::class, 'reset_password']);
     Route::post('/login', [ClientAuthController::class, 'login']);
-    Route::post('/logout', [ClientAuthController::class, 'logout'])->middleware('verify.token');
+    Route::post('/logout', [ClientAuthController::class, 'logout'])->middleware('verify.client');
     Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
     Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
     Route::get('/getServices', [BookingController::class, 'getServices']);
-    Route::delete('/deleteClient', [ClientAuthController::class, 'deleteClient']);
+    Route::delete('/deleteClient', [ClientAuthController::class, 'deleteClient'])->middleware('verify.client');
     Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
     Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
     Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);

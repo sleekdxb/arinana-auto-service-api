@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\VerifyAccessToken;
+use App\Http\Middleware\VerifyClientToken;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
@@ -14,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
             'verify.token' => VerifyAccessToken::class,
+            'verify.client' => VerifyClientToken::class,
         ]);
     })
     ->withMiddleware(function (Middleware $middleware): void {

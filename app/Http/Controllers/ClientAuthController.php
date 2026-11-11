@@ -168,17 +168,6 @@ class ClientAuthController extends Controller
 
     public function deleteClient(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'client_id' => 'required|string',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         return ClientAuthHelper::deleteClient($request);
     }
 }
