@@ -5,6 +5,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\VerifyAccessToken;
 use App\Http\Middleware\VerifyClientToken;
+use App\Http\Middleware\VerifyTeamToken;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__ . '/../routes/web.php',
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'verify.token' => VerifyAccessToken::class,
             'verify.client' => VerifyClientToken::class,
+            'verify.team' => VerifyTeamToken::class,
         ]);
     })
     ->withMiddleware(function (Middleware $middleware): void {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\StaffController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ClientAuthController;
@@ -87,6 +88,19 @@ Route::prefix('teamAuth')->group(function () {
     Route::post('/logout', [TeamAuthController::class, 'logout']);
     Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
     Route::put('/updateProfile', [TeamAuthController::class, 'updateProfile']);
+});
+
+Route::prefix('team')->middleware('verify.team')->group(function () {
+    Route::get('/getStaff', [StaffController::class, 'getStaff']);
+
+    Route::middleware('verify.team:SUPER_ADMIN')->group(function () {
+        Route::post('/addStaff', [StaffController::class, 'addStaff']);
+        Route::put('/updateStaff', [StaffController::class, 'updateStaff']);
+        Route::put('/suspendStaff', [StaffController::class, 'suspendStaff']);
+        Route::put('/reactivateStaff', [StaffController::class, 'reactivateStaff']);
+        Route::put('/resetStaffPassword', [StaffController::class, 'resetStaffPassword']);
+        Route::delete('/deleteStaff', [StaffController::class, 'deleteStaff']);
+    });
 });
 
 Route::prefix('team')->group(function () {

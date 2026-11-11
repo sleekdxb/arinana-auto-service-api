@@ -57,7 +57,7 @@
           @endif
           <tr>
             <td style="padding:0 28px 28px;">
-              <p style="margin:0;font-size:14px;line-height:1.6;color:#3d3d3d;">Open the Ariana Auto Service app to see the full timeline of your booking.</p>
+              <p style="margin:0;font-size:14px;line-height:1.6;color:#3d3d3d;">{{ $details['footer'] ?? 'Open the Ariana Auto Service app to see the full timeline of your booking.' }}</p>
             </td>
           </tr>
           <tr>

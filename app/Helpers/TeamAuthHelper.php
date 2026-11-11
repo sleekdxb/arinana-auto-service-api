@@ -28,6 +28,13 @@ class TeamAuthHelper
                 ], 401);
             }
 
+            if ($user->isSuspended()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your account has been suspended. Please contact an administrator.'
+                ], 403);
+            }
+
             $expirationTime = now()->addDays(7);
 
             $currentDeviceKey = md5(
@@ -119,6 +126,7 @@ class TeamAuthHelper
             ])->fromUser($user);
 
             $session = TeamSession::create([
+                'id' => (string) Str::uuid(),
                 'session_id' => 'SESS_' . strtoupper(Str::random(18)),
                 'team_id' => $user->team_id,
                 'ip_address' => $request->ip(),

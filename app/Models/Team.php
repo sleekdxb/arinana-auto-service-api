@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
@@ -14,6 +15,9 @@ class Team extends Model implements JWTSubject
         'hashed_email',
         'full_name',
         'account_type',
+        'role',
+        'access_level',
+        'employee_id',
         'email_verified_at',
         'phone',
         'state_id',
@@ -47,7 +51,22 @@ class Team extends Model implements JWTSubject
      */
     public function getJWTCustomClaims(): array
     {
-        return [];
+        return ['team_id' => $this->team_id];
+    }
+
+    public const SUPER_ADMIN = 'SUPER_ADMIN';
+    public const STAFF = 'STAFF';
+    public const MANAGEMENT = 'MANAGEMENT';
+    public const ACCESS_LEVELS = [self::SUPER_ADMIN, self::STAFF, self::MANAGEMENT];
+
+    public function currentStatus(): BelongsTo
+    {
+        return $this->belongsTo(TeamStatus::class, 'state_id', 'state_id');
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->currentStatus?->name === TeamStatus::SUSPENDED;
     }
 
     public function sessions(): HasMany
