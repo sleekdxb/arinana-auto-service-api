@@ -16,6 +16,8 @@ class BookingState extends Model
     public const IN_PROGRESS = 'IN_PROGRESS';
     public const READY_FOR_PICKUP = 'READY_FOR_PICKUP';
     public const COMPLETED = 'COMPLETED';
+    public const DOCUMENTS_APPROVED = 'DOCUMENTS_APPROVED';
+    public const CERTIFICATE_ISSUED = 'CERTIFICATE_ISSUED';
 
     public const LABELS = [
         self::PLACED => 'Booked',
@@ -23,6 +25,8 @@ class BookingState extends Model
         self::IN_PROGRESS => 'Service in Progress',
         self::READY_FOR_PICKUP => 'Ready for Pickup',
         self::COMPLETED => 'Completed',
+        self::DOCUMENTS_APPROVED => 'Documents Approved',
+        self::CERTIFICATE_ISSUED => 'Certificate Issued',
     ];
 
     private const ALIASES = [

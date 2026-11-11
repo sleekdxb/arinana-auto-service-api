@@ -8,6 +8,7 @@ use App\Models\Booking;
 use App\Models\BookingState;
 use App\Models\BookingFile;
 use App\Models\Vehicle;
+use App\Models\VehicleState;
 use App\Models\Service;
 use App\Models\BookingFileState;
 use Illuminate\Support\Facades\File;
@@ -312,6 +313,8 @@ class BookingHelper
                 $request->name,
                 $request->note
             );
+
+            self::approveDocumentsIfComplete($booking);
         }
 
         return response()->json([
@@ -319,6 +322,74 @@ class BookingHelper
             'message' => 'Booking file state created successfully.',
             'data' => $result['state'],
         ], 201);
+    }
+
+
+    private static function approveDocumentsIfComplete(Booking $booking): void
+    {
+        $serviceName = Service::where('ser_id', $booking->service)->value('name');
+        if (!str_contains(strtolower($booking->service_type . ' ' . $serviceName), 'structural')) {
+            return;
+        }
+
+        $current = BookingState::where('state_id', $booking->state_id)->value('name');
+        if (BookingState::normalizeName($current ?? BookingState::PLACED) !== BookingState::PLACED) {
+            return;
+        }
+
+        $latest = BookingFile::with('latestState')
+            ->where('book_id', $booking->book_id)
+            ->where('file_url', 'not like', 'booking/Certificates/%')
+            ->orderBy('id')
+            ->get()
+            ->keyBy(fn (BookingFile $file) => strtolower(pathinfo((string) $file->file_name, PATHINFO_FILENAME)));
+
+        if ($latest->isEmpty()) {
+            return;
+        }
+
+        $missing = collect(SettingsHelper::documentRequirements(true))
+            ->filter(fn (array $requirement) => $requirement['required'] ?? false)
+            ->map(fn (array $requirement) => strtolower($requirement['key']))
+            ->diff($latest->keys());
+
+        $allApproved = $latest->every(
+            fn (BookingFile $file) => BookingState::normalizeName($file->latestState?->state) === 'APPROVED'
+        );
+
+        if ($missing->isNotEmpty() || !$allApproved) {
+            return;
+        }
+
+        $state = DB::transaction(function () use ($booking) {
+            $stateId = 'STATE_' . strtoupper(Str::random(16));
+
+            $state = BookingState::create([
+                'book_id' => $booking->book_id,
+                'team_id' => 'SYSTEM01',
+                'state_id' => $stateId,
+                'name' => BookingState::DOCUMENTS_APPROVED,
+                'code' => 'DOCS_APPROVED',
+                'note' => null,
+            ]);
+            $booking->update(['state_id' => $stateId]);
+
+            foreach ($booking->vehicle()->get() as $vehicle) {
+                $vehicleStateId = 'STATE_' . strtoupper(Str::random(16));
+                VehicleState::create([
+                    'veh_id' => $vehicle->veh_id,
+                    'team_id' => 'SYSTEM01',
+                    'state_id' => $vehicleStateId,
+                    'name' => BookingState::DOCUMENTS_APPROVED,
+                    'code' => 'DOCS_APPROVED',
+                ]);
+                $vehicle->update(['state_id' => $vehicleStateId]);
+            }
+
+            return $state;
+        });
+
+        NotificationHelper::bookingStateChanged($booking->fresh(), $state->name);
     }
 
 

@@ -146,6 +146,131 @@ class ClientApiTest extends TestCase
         $this->assertSame('Document is blurry', $files['Repair_history.pdf']['latest_state']['note']);
     }
 
+    private function bookStructural(Vehicle $vehicle, array $documents): string
+    {
+        $bookId = $this->postJson('/api/booking/addBooking', [
+            'client_id' => $this->client->client_id,
+            'vehicle_ids' => [$vehicle->veh_id],
+            'service' => 'SERVICE_2',
+            'service_type' => 'Structural Safety Inspection',
+            'date' => '2026-11-05',
+            'time' => '09:00',
+        ])->assertCreated()->json('data.book_id');
+
+        $this->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 10:31:00']),
+            'booking_doc' => array_map(
+                fn ($name) => UploadedFile::fake()->create($name . '.pdf', 100, 'application/pdf'),
+                $documents
+            ),
+        ])->assertOk();
+
+        return $bookId;
+    }
+
+    private function reviewDocument(string $bookId, string $name, string $decision): void
+    {
+        $file = BookingFile::where('book_id', $bookId)->where('file_name', $name . '.pdf')->latest('id')->firstOrFail();
+
+        $this->putJson('/api/team/setBookingFileState', [
+            'file_id' => (string) $file->id,
+            'team_id' => 'TEAMTEST1',
+            'name' => $decision,
+        ])->assertCreated();
+    }
+
+    private function bookingStatus(string $bookId): string
+    {
+        $booking = Booking::where('book_id', $bookId)->firstOrFail();
+
+        return BookingState::where('state_id', $booking->state_id)->value('name');
+    }
+
+    public function test_booking_moves_to_documents_approved_once_every_document_is_approved(): void
+    {
+        $vehicle = $this->addVehicle();
+        $bookId = $this->bookStructural($vehicle, ['Proof_of_ownership', 'Repair_history']);
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->reviewDocument($bookId, 'Repair_history', 'REJECTED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_doc' => [UploadedFile::fake()->create('Repair_history.pdf', 100, 'application/pdf')],
+        ])->assertOk();
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+        $this->assertSame(
+            'Documents Approved',
+            \App\Models\ClientNotification::where('type', 'booking_status')->latest('id')->first()->subject
+        );
+        $this->assertSame(
+            'DOCUMENTS_APPROVED',
+            \App\Models\VehicleState::where('state_id', $vehicle->fresh()->state_id)->value('name')
+        );
+
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+        $this->assertSame(1, BookingState::where('book_id', $bookId)->where('name', 'DOCUMENTS_APPROVED')->count());
+    }
+
+    public function test_required_document_alone_is_enough(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_structural_service_with_a_sub_type_is_recognised(): void
+    {
+        \App\Models\Service::create(['ser_id' => 'SERVICE_3', 'name' => 'Structural Safety', 'type' => ['Full Inspection']]);
+        $vehicle = $this->addVehicle();
+        $bookId = $this->postJson('/api/booking/addBooking', [
+            'client_id' => $this->client->client_id,
+            'vehicle_ids' => [$vehicle->veh_id],
+            'service' => 'SERVICE_3',
+            'service_type' => 'Full Inspection',
+            'date' => '2026-11-05',
+            'time' => '10:00',
+        ])->assertCreated()->json('data.book_id');
+        $this->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 10:31:00']),
+            'booking_doc' => [UploadedFile::fake()->create('Proof_of_ownership.pdf', 100, 'application/pdf')],
+        ])->assertOk();
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_missing_required_document_keeps_booking_placed(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Repair_history']);
+
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+    }
+
+    public function test_approval_does_not_move_a_booking_already_past_booked(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'VEHICLE_RECEIVED',
+        ])->assertOk();
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('VEHICLE_RECEIVED', $this->bookingStatus($bookId));
+    }
+
     public function test_upload_to_unknown_booking_is_rejected(): void
     {
         $this->post('/api/media/uploadFiles', [
