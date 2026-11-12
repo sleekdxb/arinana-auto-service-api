@@ -9,14 +9,9 @@ class TeamSession extends Authenticatable implements JWTSubject
 {
     protected $table = 'team_sessions';
 
-    public $incrementing = false;
-
-    protected $keyType = 'string';
-
     public $timestamps = false;
 
     protected $fillable = [
-        'id',
         'team_id',
         'session_id',
         'ip_address',

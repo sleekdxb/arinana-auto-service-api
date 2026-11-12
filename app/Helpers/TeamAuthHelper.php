@@ -126,7 +126,6 @@ class TeamAuthHelper
             ])->fromUser($user);
 
             $session = TeamSession::create([
-                'id' => (string) Str::uuid(),
                 'session_id' => 'SESS_' . strtoupper(Str::random(18)),
                 'team_id' => $user->team_id,
                 'ip_address' => $request->ip(),
