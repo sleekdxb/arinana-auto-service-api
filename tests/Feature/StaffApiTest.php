@@ -70,7 +70,7 @@ class StaffApiTest extends TestCase
         $this->postJson('/api/teamAuth/login', ['email' => 'linda@example.com', 'password' => $password])->assertOk();
 
         TeamSession::create([
-            'id' => 'S1', 'team_id' => 'TEAMADMIN', 'session_id' => 'S1', 'payload' => '{}', 'last_activity' => 1762851600,
+            'team_id' => 'TEAMADMIN', 'session_id' => 'S1', 'payload' => '{}', 'last_activity' => 1762851600,
         ]);
 
         $staff = collect($this->as($this->admin)->getJson('/api/team/getStaff')->assertOk()->json('data'))->keyBy('email');
