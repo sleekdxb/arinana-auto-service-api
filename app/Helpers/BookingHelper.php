@@ -327,8 +327,7 @@ class BookingHelper
 
     private static function approveDocumentsIfComplete(Booking $booking): void
     {
-        $serviceName = Service::where('ser_id', $booking->service)->value('name');
-        if (!str_contains(strtolower($booking->service_type . ' ' . $serviceName), 'structural')) {
+        if (!$booking->isStructuralSafety()) {
             return;
         }
 
