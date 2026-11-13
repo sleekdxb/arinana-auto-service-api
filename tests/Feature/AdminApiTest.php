@@ -192,6 +192,33 @@ class AdminApiTest extends TestCase
         $this->assertSame(2, ClientNotification::where('notifiable_id', $bookId)->count());
     }
 
+    public function test_status_notifications_use_the_saved_pipeline_labels(): void
+    {
+        $bookId = $this->book()->assertCreated()->json('data.book_id');
+
+        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'IN_PROGRESS']))->assertOk();
+        $this->assertSame('Inspection in Progress', ClientNotification::where('notifiable_id', $bookId)->latest('id')->value('subject'));
+
+        $this->putJson('/api/team/updateStatusPipelines', $this->team([
+            'structural_safety' => [
+                ['name' => 'PLACED', 'label' => 'Booked'],
+                ['name' => 'VEHICLE_RECEIVED', 'label' => 'Car dropped off'],
+                ['label' => 'Quality check'],
+                ['name' => 'COMPLETED', 'label' => 'Completed'],
+            ],
+        ]))->assertOk();
+
+        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
+        $this->assertSame('Car dropped off', ClientNotification::where('notifiable_id', $bookId)->latest('id')->value('subject'));
+        Mail::assertSent(BookingUpdateMail::class, fn ($mail) => str_starts_with($mail->subjectLine, 'Car dropped off')
+            && $mail->details['status'] === 'Car dropped off');
+
+        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'QUALITY_CHECK']))->assertOk();
+        $notification = ClientNotification::where('notifiable_id', $bookId)->latest('id')->first();
+        $this->assertSame('Quality check', $notification->subject);
+        $this->assertStringEndsWith('is now quality check.', data_get($notification->data, 'body'));
+    }
+
     public function test_eta_technician_and_certificate(): void
     {
         $bookId = $this->book()->json('data.book_id');

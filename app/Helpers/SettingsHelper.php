@@ -3,6 +3,7 @@
 namespace App\Helpers;
 
 use App\Models\AppSetting;
+use App\Models\Booking;
 use App\Models\BookingState;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,6 +50,21 @@ class SettingsHelper
     public static function statusPipelines(): array
     {
         return AppSetting::read(self::STATUS_PIPELINES, self::defaultStatusPipelines());
+    }
+
+    /** How [state] reads for this booking, from its saved status pipeline. */
+    public static function stepLabel(Booking $booking, string $state): string
+    {
+        $name = BookingState::normalizeName($state);
+        $pipeline = self::statusPipelines()[$booking->isStructuralSafety() ? 'structural_safety' : 'service'] ?? [];
+
+        foreach ($pipeline as $step) {
+            if (BookingState::normalizeName($step['name'] ?? $step['label'] ?? '') === $name && !empty($step['label'])) {
+                return $step['label'];
+            }
+        }
+
+        return BookingState::LABELS[$name] ?? ucfirst(strtolower(str_replace('_', ' ', $name)));
     }
 
     public static function notificationSettings(): array

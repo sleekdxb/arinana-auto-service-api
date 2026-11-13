@@ -33,6 +33,13 @@ class Booking extends Model
     ];
 
 
+    public function isStructuralSafety(): bool
+    {
+        $serviceName = Service::where('ser_id', $this->service)->value('name');
+
+        return str_contains(strtolower($this->service_type . ' ' . $serviceName), 'structural');
+    }
+
     public function files()
     {
         return $this->hasMany(BookingFile::class, 'book_id', 'book_id'); // book_id is the foreign key

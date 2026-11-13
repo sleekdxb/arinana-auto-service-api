@@ -82,7 +82,7 @@ class NotificationHelper
             'subject' => 'Booking confirmed – ARN-' . $booking->booking_ref,
             'heading' => 'Your booking is confirmed',
             'message' => 'Thanks for booking with us. Please bring your vehicle at the time below.',
-            'status' => BookingState::LABELS[BookingState::PLACED],
+            'status' => SettingsHelper::stepLabel($booking, BookingState::PLACED),
         ]);
     }
 
@@ -90,8 +90,8 @@ class NotificationHelper
     public static function bookingStateChanged(Booking $booking, string $state, ?string $note = null): void
     {
         $name = BookingState::normalizeName($state);
-        $label = self::stateLabel($name);
-        $message = self::statusMessage($booking, $name);
+        $label = SettingsHelper::stepLabel($booking, $name);
+        $message = self::statusMessage($booking, $name, $label);
 
         $notification = self::notify(
             $booking->client_id,
@@ -334,9 +334,9 @@ class NotificationHelper
     }
 
 
-    private static function statusMessage(Booking $booking, string $name): string
+    private static function statusMessage(Booking $booking, string $name, string $label): string
     {
-        $inspection = str_contains(strtolower((string) $booking->service_type), 'structural');
+        $inspection = $booking->isStructuralSafety();
 
         return match ($name) {
             BookingState::PLACED => 'Your booking is confirmed.',
@@ -346,7 +346,7 @@ class NotificationHelper
             BookingState::COMPLETED => 'Your booking is complete. Thank you for choosing Ariana Auto Service.',
             'DOCUMENTS_APPROVED' => 'Your documents have been approved.',
             'CERTIFICATE_ISSUED' => 'Your structural safety certificate has been issued.',
-            default => 'Your booking ARN-' . $booking->booking_ref . ' is now ' . strtolower(self::stateLabel($name)) . '.',
+            default => 'Your booking ARN-' . $booking->booking_ref . ' is now ' . strtolower($label) . '.',
         };
     }
 
@@ -496,12 +496,7 @@ class NotificationHelper
     }
 
 
-    public static function stateLabel(string $state): string
-    {
-        $key = BookingState::normalizeName($state);
 
-        return BookingState::LABELS[$key] ?? ucfirst(strtolower(str_replace('_', ' ', $key)));
-    }
 
 
     private static function vehicleLabel(Vehicle $vehicle): string
