@@ -239,43 +239,17 @@ class TeamStatisticHelper
                 $vehicle = ($vehiclesByBooking[$booking->getKey()] ?? collect())
                     ->first();
 
-                /*
-                 * Resolve appointment date from available booking fields.
-                 * Replace these candidate fields with your actual column names
-                 * once confirmed.
-                 */
                 $appointmentDate = null;
+                $date = $booking->getRawOriginal('date');
+                $time = $booking->getRawOriginal('time');
 
-                $dateValue = $booking->date
-                    ?? $booking->appointment_date
-                    ?? $booking->booking_date
-                    ?? null;
-
-                $timeValue = $booking->time
-                    ?? $booking->appointment_time
-                    ?? $booking->booking_time
-                    ?? null;
-
-                try {
-                    if ($dateValue instanceof \Carbon\CarbonInterface) {
-                        $dateTime = $dateValue->copy();
-
-                        if (!empty($timeValue)) {
-                            $dateTime->setTimeFromTimeString((string) $timeValue);
-                        }
-
-                        $appointmentDate = $dateTime->format('D, M j; g:i a');
-                    } elseif (!empty($dateValue)) {
-                        $dateTimeString = trim(
-                            (string) $dateValue . ' ' .
-                            (string) ($timeValue ?? '')
-                        );
-
-                        $appointmentDate = Carbon::parse($dateTimeString)
+                if (!empty($date)) {
+                    try {
+                        $appointmentDate = Carbon::parse(substr((string) $date, 0, 10) . ' ' . ($time ?: '00:00'))
                             ->format('D, M j; g:i a');
+                    } catch (\Throwable $e) {
+                        $appointmentDate = null;
                     }
-                } catch (\Throwable $e) {
-                    $appointmentDate = null;
                 }
 
                 return [
