@@ -69,6 +69,41 @@ class ClientApiTest extends TestCase
         return Vehicle::where('plate_number', $plate)->firstOrFail();
     }
 
+    public function test_vin_is_optional_and_any_length(): void
+    {
+        $vehicle = fn (string $plate, ?string $vin) => $this->postJson('/api/vehicles/addVehicle', [
+            'client_id' => $this->client->client_id,
+            'make' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2021,
+            'color' => 'Black',
+            'plate_number' => $plate,
+            'vin' => $vin,
+        ]);
+
+        $vehicle('NOVIN1', null)->assertCreated();
+        $vehicle('NOVIN2', '')->assertCreated();
+        $this->assertSame(2, Vehicle::whereNull('vin')->count());
+
+        $vehicle('LONGVIN', 'jtmab7aj5r1234567-chassis-2041')->assertCreated();
+        $this->assertSame('JTMAB7AJ5R1234567-CHASSIS-2041', Vehicle::where('plate_number', 'LONGVIN')->value('vin'));
+
+        $vehicle('DUPVIN', 'JTMAB7AJ5R1234567-CHASSIS-2041')->assertStatus(422)->assertJsonValidationErrors('vin');
+        $vehicle('TOOLONG', str_repeat('X', 65))->assertStatus(422)->assertJsonValidationErrors('vin');
+
+        $long = Vehicle::where('plate_number', 'LONGVIN')->firstOrFail();
+        $this->putJson('/api/vehicles/updateVehicle', [
+            'veh_id' => $long->veh_id,
+            'make' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2021,
+            'color' => 'Black',
+            'plate_number' => 'LONGVIN',
+            'vin' => '',
+        ])->assertOk();
+        $this->assertNull($long->fresh()->vin);
+    }
+
     private function book(Vehicle $vehicle, string $date = '2026-11-05', string $time = '08:00')
     {
         return $this->postJson('/api/booking/addBooking', [
