@@ -10,6 +10,10 @@ use Carbon\Carbon;
 
 class FileUploadController extends Controller
 {
+    private const IMAGE_TYPES = 'jpeg,jpg,png,gif,webp,heic,heif,bmp,tiff,tif';
+
+    private const DOCUMENT_TYPES = 'pdf,doc,docx,xls,xlsx,csv,txt,rtf,odt,ods,ppt,pptx';
+
 
     public function uploadFiles(Request $request): JsonResponse
     {
@@ -104,8 +108,8 @@ class FileUploadController extends Controller
                 'booking_img' => 'required_without:booking_doc|array|min:1',
                 'booking_doc' => 'required_without:booking_img|array|min:1',
 
-                'booking_img.*' => 'file|mimes:jpeg,png,jpg,gif,webp|max:20480',
-                'booking_doc.*' => 'file|mimes:pdf,doc,docx|max:20480',
+                'booking_img.*' => 'file|mimes:' . self::IMAGE_TYPES . '|max:20480',
+                'booking_doc.*' => 'file|mimes:' . self::DOCUMENT_TYPES . '|max:20480',
             ];
         }
 

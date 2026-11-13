@@ -40,11 +40,26 @@ class SettingsHelper
 
     public static function documentRequirements(bool $enabledOnly = false): array
     {
-        $requirements = AppSetting::read(self::DOCUMENT_REQUIREMENTS, self::defaultDocumentRequirements());
+        $requirements = array_map(
+            fn(array $r) => $r + ['type' => 'document', 'count' => 1],
+            AppSetting::read(self::DOCUMENT_REQUIREMENTS, self::defaultDocumentRequirements())
+        );
 
         return $enabledOnly
             ? array_values(array_filter($requirements, fn($r) => $r['enabled'] ?? true))
             : $requirements;
+    }
+
+    /**
+     * File names (without extension, lower case) a requirement's uploads use:
+     * "proof_of_ownership" for one file, "vehicle_photos_1".."_4" for several.
+     */
+    public static function requirementFileKeys(array $requirement): array
+    {
+        $key = strtolower($requirement['key']);
+        $count = max(1, (int) ($requirement['count'] ?? 1));
+
+        return $count === 1 ? [$key] : array_map(fn(int $i) => $key . '_' . $i, range(1, $count));
     }
 
     public static function statusPipelines(): array
@@ -155,6 +170,8 @@ class SettingsHelper
                 'description' => trim((string) ($item['description'] ?? '')),
                 'required' => (bool) ($item['required'] ?? false),
                 'enabled' => (bool) ($item['enabled'] ?? true),
+                'type' => ($item['type'] ?? 'document') === 'image' ? 'image' : 'document',
+                'count' => max(1, min(10, (int) ($item['count'] ?? 1))),
             ];
         }
 
@@ -266,6 +283,8 @@ class SettingsHelper
                 'description' => "The official title, registration card, or bill of sale verifying the vehicle's identity and legal owner.",
                 'required' => true,
                 'enabled' => true,
+                'type' => 'document',
+                'count' => 1,
             ],
             [
                 'key' => 'Repair_history',
@@ -273,6 +292,8 @@ class SettingsHelper
                 'description' => 'Insurance claim files, frame-straightening specs, or autobody shop receipts showing past structural work or accident damage.',
                 'required' => false,
                 'enabled' => true,
+                'type' => 'document',
+                'count' => 1,
             ],
         ];
     }

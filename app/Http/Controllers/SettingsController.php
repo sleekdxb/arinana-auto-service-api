@@ -42,6 +42,8 @@ class SettingsController extends Controller
             'requirements.*.description' => 'nullable|string|max:500',
             'requirements.*.required' => 'nullable|boolean',
             'requirements.*.enabled' => 'nullable|boolean',
+            'requirements.*.type' => 'nullable|in:document,image',
+            'requirements.*.count' => 'nullable|integer|min:1|max:10',
         ], fn() => SettingsHelper::updateDocumentRequirements($request));
     }
 
