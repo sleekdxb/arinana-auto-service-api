@@ -59,7 +59,7 @@ class VehicleHelper
                 'make' => $request->make,
                 'model' => $request->model,
                 'year' => $request->year,
-                'vin' => strtoupper($request->vin),
+                'vin' => $request->filled('vin') ? strtoupper(trim($request->vin)) : null,
                 'plate_number' => strtoupper($request->plate_number),
                 'mileage' => $request->mileage ?? 0,
                 'color' => $request->color,
@@ -120,6 +120,13 @@ class VehicleHelper
         $data = array_filter($data, function ($value) {
             return $value !== null && trim((string) $value) !== '';
         });
+
+        if (isset($data['vin'])) {
+            $data['vin'] = strtoupper(trim($data['vin']));
+        } elseif ($request->exists('vin')) {
+            // An empty VIN on edit clears it.
+            $data['vin'] = null;
+        }
 
         // Update only fields that exist and are not empty
         if (!empty($data)) {
