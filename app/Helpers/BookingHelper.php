@@ -349,7 +349,7 @@ class BookingHelper
 
         $missing = collect(SettingsHelper::documentRequirements(true))
             ->filter(fn (array $requirement) => $requirement['required'] ?? false)
-            ->map(fn (array $requirement) => strtolower($requirement['key']))
+            ->flatMap(fn (array $requirement) => SettingsHelper::requirementFileKeys($requirement))
             ->diff($latest->keys());
 
         $allApproved = $latest->every(

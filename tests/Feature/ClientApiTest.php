@@ -217,6 +217,65 @@ class ClientApiTest extends TestCase
         $this->assertSame(1, BookingState::where('book_id', $bookId)->where('name', 'DOCUMENTS_APPROVED')->count());
     }
 
+    public function test_requirements_set_a_type_and_number_of_files(): void
+    {
+        $this->getJson('/api/booking/getDocumentRequirements')
+            ->assertOk()
+            ->assertJsonPath('data.requirements.0.type', 'document')
+            ->assertJsonPath('data.requirements.0.count', 1);
+
+        $this->putJson('/api/team/updateDocumentRequirements', [
+            'team_id' => 'TEAMTEST1',
+            'requirements' => [
+                ['key' => 'Proof_of_ownership', 'name' => 'Proof of Ownership', 'required' => true],
+                ['name' => 'Vehicle photos', 'description' => 'All four sides', 'required' => true, 'type' => 'image', 'count' => 2],
+            ],
+        ])->assertOk();
+
+        $this->getJson('/api/booking/getDocumentRequirements')
+            ->assertOk()
+            ->assertJsonPath('data.requirements.1.key', 'Vehicle_photos')
+            ->assertJsonPath('data.requirements.1.type', 'image')
+            ->assertJsonPath('data.requirements.1.count', 2);
+
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_img' => [
+                UploadedFile::fake()->create('Vehicle_photos_1.heic', 100, 'image/heic'),
+                UploadedFile::fake()->create('Vehicle_photos_2.webp', 100, 'image/webp'),
+            ],
+        ])->assertOk();
+
+        foreach (['Vehicle_photos_1.heic', 'Vehicle_photos_2.webp'] as $name) {
+            $this->assertSame('PLACED', $this->bookingStatus($bookId));
+            $file = BookingFile::where('book_id', $bookId)->where('file_name', $name)->firstOrFail();
+            $this->putJson('/api/team/setBookingFileState', [
+                'file_id' => (string) $file->id, 'team_id' => 'TEAMTEST1', 'name' => 'APPROVED',
+            ])->assertCreated();
+        }
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_booking_documents_accept_word_and_spreadsheet_files(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_doc' => [
+                UploadedFile::fake()->create('Repair_history.docx', 100, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                UploadedFile::fake()->create('Invoice.xlsx', 100, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            ],
+        ])->assertOk();
+
+        $this->assertSame(3, BookingFile::where('book_id', $bookId)->count());
+    }
+
     public function test_required_document_alone_is_enough(): void
     {
         $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
