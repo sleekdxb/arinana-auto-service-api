@@ -165,9 +165,4 @@ class ClientAuthController extends Controller
 
         return ClientAuthHelper::removeProfilePhoto($request);
     }
-
-    public function deleteClient(Request $request): JsonResponse
-    {
-        return ClientAuthHelper::deleteClient($request);
-    }
 }

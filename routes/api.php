@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\InboxController;
 use App\Http\Controllers\StaffController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -34,7 +35,11 @@ Route::prefix('client')->group(function () {
     Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
     Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
     Route::get('/getServices', [BookingController::class, 'getServices']);
-    Route::delete('/deleteClient', [ClientAuthController::class, 'deleteClient'])->middleware('verify.client');
+    Route::middleware('verify.client')->group(function () {
+        Route::post('/requestAccountDeletion', [InboxController::class, 'requestAccountDeletion']);
+        Route::get('/getAccountDeletionRequest', [InboxController::class, 'getAccountDeletionRequest']);
+        Route::delete('/cancelAccountDeletionRequest', [InboxController::class, 'cancelAccountDeletionRequest']);
+    });
     Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
     Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
     Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
@@ -92,6 +97,10 @@ Route::prefix('teamAuth')->group(function () {
 
 Route::prefix('team')->middleware('verify.team')->group(function () {
     Route::get('/getStaff', [StaffController::class, 'getStaff']);
+    Route::get('/getContactMessages', [InboxController::class, 'getContactMessages']);
+    Route::put('/setContactMessageState', [InboxController::class, 'setContactMessageState']);
+    Route::post('/replyContactMessage', [InboxController::class, 'replyContactMessage']);
+    Route::get('/getAccountDeletionRequests', [InboxController::class, 'getAccountDeletionRequests']);
 
     Route::middleware('verify.team:SUPER_ADMIN')->group(function () {
         Route::post('/addStaff', [StaffController::class, 'addStaff']);
@@ -100,6 +109,8 @@ Route::prefix('team')->middleware('verify.team')->group(function () {
         Route::put('/reactivateStaff', [StaffController::class, 'reactivateStaff']);
         Route::put('/resetStaffPassword', [StaffController::class, 'resetStaffPassword']);
         Route::delete('/deleteStaff', [StaffController::class, 'deleteStaff']);
+        Route::post('/approveAccountDeletion', [InboxController::class, 'approveAccountDeletion']);
+        Route::post('/rejectAccountDeletion', [InboxController::class, 'rejectAccountDeletion']);
     });
 });
 
