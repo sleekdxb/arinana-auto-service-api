@@ -10,10 +10,13 @@ use App\Models\Client;
 use App\Models\ClientFile;
 use App\Models\ClientNotification;
 use App\Models\ClientSession;
+use App\Models\AccountDeletionRequest;
 use App\Models\Otp;
+use App\Models\Team;
 use App\Models\Vehicle;
 use App\Models\VehicleFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -67,26 +70,88 @@ class ClientDeletionTest extends TestCase
         return $path;
     }
 
-    public function test_requires_a_token(): void
+    private function admin(string $access = Team::SUPER_ADMIN): Team
+    {
+        return Team::create([
+            'team_id' => 'TEAM' . $access,
+            'email' => strtolower($access) . '@example.com',
+            'hashed_email' => hash('sha256', strtolower($access) . '@example.com'),
+            'full_name' => 'Admin',
+            'account_type' => 'admin',
+            'access_level' => $access,
+            'state_id' => 'STATE-' . $access,
+            'password' => 'secret123',
+        ]);
+    }
+
+    private function requestDeletion(Client $client, array $body = [])
+    {
+        return $this->withToken(JWTAuth::fromUser($client))->postJson('/api/client/requestAccountDeletion', $body);
+    }
+
+    public function test_clients_can_no_longer_delete_their_own_account(): void
     {
         $client = $this->makeClient('CLIENTA');
 
-        $this->deleteJson('/api/client/deleteClient', ['client_id' => $client->client_id])
-            ->assertUnauthorized();
+        $this->withToken(JWTAuth::fromUser($client))
+            ->deleteJson('/api/client/deleteClient?client_id=CLIENTA')
+            ->assertNotFound();
 
         $this->assertDatabaseHas('clients', ['client_id' => 'CLIENTA']);
     }
 
-    public function test_cannot_delete_someone_else(): void
+    public function test_requesting_deletion_needs_a_token(): void
     {
-        $me = $this->makeClient('CLIENTA');
-        $other = $this->makeClient('CLIENTB');
+        $this->postJson('/api/client/requestAccountDeletion')->assertUnauthorized();
+    }
 
-        $this->withToken(JWTAuth::fromUser($me))
-            ->deleteJson('/api/client/deleteClient?client_id=' . $other->client_id)
+    public function test_client_requests_and_cancels_deletion(): void
+    {
+        Mail::fake();
+        $client = $this->makeClient('CLIENTA');
+
+        $requestId = $this->requestDeletion($client, ['reason' => 'Moving abroad'])
+            ->assertCreated()
+            ->assertJsonPath('data.status', 'PENDING')
+            ->json('data.request_id');
+        $this->requestDeletion($client)->assertStatus(409);
+
+        $this->withToken(JWTAuth::fromUser($client))->getJson('/api/client/getAccountDeletionRequest')
+            ->assertOk()->assertJsonPath('data.request_id', $requestId)->assertJsonPath('data.reason', 'Moving abroad');
+        $this->assertDatabaseHas('client_notifications', ['client_id' => 'CLIENTA', 'subject' => 'Account deletion requested']);
+        Mail::assertSent(\App\Mail\BookingUpdateMail::class, fn ($mail) => $mail->hasTo('clienta@example.com'));
+
+        $this->withToken(JWTAuth::fromUser($client))->deleteJson('/api/client/cancelAccountDeletionRequest')
+            ->assertOk()->assertJsonPath('data.status', 'CANCELLED');
+        $this->assertDatabaseHas('clients', ['client_id' => 'CLIENTA']);
+    }
+
+    public function test_only_super_admins_can_approve_and_rejections_need_a_reason(): void
+    {
+        Mail::fake();
+        $client = $this->makeClient('CLIENTA');
+        $requestId = $this->requestDeletion($client)->json('data.request_id');
+
+        $this->withToken(JWTAuth::fromUser($this->admin(Team::STAFF)))
+            ->postJson('/api/team/approveAccountDeletion', ['request_id' => $requestId])
             ->assertForbidden();
 
-        $this->assertDatabaseHas('clients', ['client_id' => 'CLIENTB']);
+        $admin = $this->admin();
+        $this->withToken(JWTAuth::fromUser($admin))->getJson('/api/team/getAccountDeletionRequests')
+            ->assertOk()->assertJsonPath('data.0.client_email', 'clienta@example.com')->assertJsonPath('data.0.account_exists', true);
+
+        $this->withToken(JWTAuth::fromUser($admin))
+            ->postJson('/api/team/rejectAccountDeletion', ['request_id' => $requestId])
+            ->assertStatus(422);
+        $this->withToken(JWTAuth::fromUser($admin))
+            ->postJson('/api/team/rejectAccountDeletion', ['request_id' => $requestId, 'note' => 'You have an open booking.'])
+            ->assertOk()->assertJsonPath('data.status', 'REJECTED')->assertJsonPath('data.handled_by', 'Admin');
+
+        $this->assertDatabaseHas('clients', ['client_id' => 'CLIENTA']);
+        $this->assertDatabaseHas('client_notifications', ['client_id' => 'CLIENTA', 'subject' => 'Account deletion declined']);
+        $this->withToken(JWTAuth::fromUser($admin))
+            ->postJson('/api/team/approveAccountDeletion', ['request_id' => $requestId])
+            ->assertStatus(422);
     }
 
     public function test_deletes_personal_data_and_anonymises_completed_bookings(): void
@@ -123,10 +188,15 @@ class ClientDeletionTest extends TestCase
 
         $this->booking($other, 'BOOKOTHER', BookingState::PLACED, []);
 
-        $this->withToken(JWTAuth::fromUser($client))
-            ->deleteJson('/api/client/deleteClient?client_id=CLIENTA')
+        Mail::fake();
+        $requestId = $this->requestDeletion($client)->assertCreated()->json('data.request_id');
+        $this->withToken(JWTAuth::fromUser($this->admin()))
+            ->postJson('/api/team/approveAccountDeletion', ['request_id' => $requestId])
             ->assertOk()
-            ->assertJson(['success' => true]);
+            ->assertJsonPath('data.status', 'COMPLETED')
+            ->assertJsonPath('data.account_exists', false);
+        Mail::assertSent(\App\Mail\BookingUpdateMail::class, fn ($mail) => $mail->subjectLine === 'Your Ariana Auto Service account has been deleted');
+        $this->assertSame(AccountDeletionRequest::COMPLETED, AccountDeletionRequest::firstWhere('request_id', $requestId)->status);
 
         $this->assertDatabaseMissing('clients', ['client_id' => 'CLIENTA']);
         $this->assertDatabaseMissing('vehicles', ['veh_id' => $vehicle->veh_id]);

@@ -586,33 +586,4 @@ class ClientAuthHelper
             'data' => $client->fresh(),
         ], 200);
     }
-
-
-    public static function deleteClient(Request $request): JsonResponse
-    {
-        $client = $request->attributes->get('client');
-
-        try {
-            ClientDeletionHelper::delete($client);
-        } catch (\Throwable $e) {
-            \Log::error('Delete Client Error: ' . $e->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete client.',
-            ], 500);
-        }
-
-        try {
-            JWTAuth::invalidate($request->bearerToken());
-        } catch (\Throwable $e) {
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Client deleted successfully.',
-        ], 200);
-    }
-
-
 }

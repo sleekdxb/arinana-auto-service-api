@@ -65,6 +65,8 @@ class PublicHelper
                 'message' => $request->message,
             ]);
 
+            ContactMessageHelper::acknowledge($contact);
+
             // 7. Return success response
             return response()->json([
                 'success' => true,
