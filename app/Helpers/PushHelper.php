@@ -45,16 +45,16 @@ class PushHelper
 
         foreach ($tokens as $token) {
             $response = Http::withToken($accessToken)->post($url, [
-                'message' => [
+                'message' => array_filter([
                     'token' => $token,
                     'notification' => array_filter(['title' => $title, 'body' => $body]),
-                    'data' => $payload,
+                    'data' => $payload ?: null,
                     'android' => [
                         'priority' => 'high',
                         'notification' => ['channel_id' => 'booking_updates'],
                     ],
                     'apns' => ['payload' => ['aps' => ['sound' => 'default']]],
-                ],
+                ], fn($value) => $value !== null),
             ]);
 
             if ($response->successful()) {
