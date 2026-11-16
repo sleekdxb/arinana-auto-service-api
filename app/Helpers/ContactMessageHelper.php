@@ -44,7 +44,12 @@ class ContactMessageHelper
             'Re: Your message to Ariana Auto Service',
             'Thanks for getting in touch',
             $reply,
-            ['rows' => [['Your message', Str::limit($contact->message, 300)]]]
+            [
+                'eyebrow' => 'Reply from our team',
+                'greet' => 'block',
+                'quote' => ['Your message', Str::limit($contact->message, 300)],
+                'footer' => 'contact',
+            ]
         );
 
         if (!$sent) {
@@ -67,8 +72,16 @@ class ContactMessageHelper
             $contact->name,
             'We received your message',
             'Thanks for contacting us',
-            'We have received your message and a member of our team will get back to you shortly, usually within one business day.',
-            ['rows' => [['Interested in', $contact->interested], ['Your message', Str::limit($contact->message, 300)]]]
+            "We've received your message. Someone from our team will get back to you shortly, usually within one business day.",
+            [
+                'eyebrow' => 'Message received',
+                'rows' => array_values(array_filter([
+                    $contact->interested ? ['Interested in', $contact->interested] : null,
+                    ['Your message', Str::limit($contact->message, 300), 'stack'],
+                ])),
+                'button' => ['Visit our website', config('mail.brand.website_url')],
+                'footer' => 'contact',
+            ]
         );
     }
 

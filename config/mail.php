@@ -115,4 +115,13 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    'brand' => [
+        'support_address' => env('MAIL_SUPPORT_ADDRESS', 'support@arianaautoservice.com'),
+        'app_url' => env('MAIL_APP_URL', 'https://arianaautoservice.com'),
+        'dashboard_url' => env('MAIL_DASHBOARD_URL', 'https://arianaautoservice.com'),
+        'website_url' => env('MAIL_WEBSITE_URL', 'https://arianaautoservice.com'),
+        'shop_address' => env('MAIL_SHOP_ADDRESS'),
+        'assets_url' => env('MAIL_ASSETS_URL'),
+    ],
+
 ];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Helpers\AccessHelper;
 use App\Helpers\BookingHelper;
 
 class BookingController extends Controller
@@ -26,6 +27,10 @@ class BookingController extends Controller
                 'success' => false,
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        if (!AccessHelper::ownsVehicles($request, (array) $request->vehicle_ids)) {
+            return AccessHelper::notFound('Vehicle');
         }
 
         return BookingHelper::addBooking($request);
@@ -52,6 +57,11 @@ class BookingController extends Controller
             ], 422);
         }
 
+        if (!AccessHelper::ownsBooking($request, $request->book_id)
+            || ($request->filled('vehicle_ids') && !AccessHelper::ownsVehicles($request, (array) $request->vehicle_ids))) {
+            return AccessHelper::notFound('Booking');
+        }
+
         return BookingHelper::updateBooking($request);
     }
 
@@ -67,6 +77,10 @@ class BookingController extends Controller
                 'success' => false,
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        if (!AccessHelper::ownsBooking($request, $request->book_id)) {
+            return AccessHelper::notFound('Booking');
         }
 
         return BookingHelper::deleteBooking($request);

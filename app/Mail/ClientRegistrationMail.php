@@ -18,7 +18,8 @@ class ClientRegistrationMail extends Mailable
     public function build()
     {
         return $this
-            ->subject('Registration Successful')
+            ->from(config('mail.from.address'), config('mail.from.name'))
+            ->subject('Welcome to Ariana Auto Service')
             ->view('emails.client-registration');
     }
 }

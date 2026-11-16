@@ -81,8 +81,13 @@ class NotificationHelper
         self::deliver($booking, $notification, 'booking_updates', 'booking_confirmed', [
             'subject' => 'Booking confirmed – ARN-' . $booking->booking_ref,
             'heading' => 'Your booking is confirmed',
-            'message' => 'Thanks for booking with us. Please bring your vehicle at the time below.',
+            'message' => "Thanks for booking with us. We've saved your spot and will keep you posted at every step.",
             'status' => SettingsHelper::stepLabel($booking, BookingState::PLACED),
+            'callouts' => [[
+                'title' => 'Before your visit',
+                'text' => 'Upload any requested documents in the app so we can start as soon as your vehicle arrives.',
+            ]],
+            'button' => ['View booking', config('mail.brand.app_url')],
         ]);
     }
 
@@ -112,10 +117,12 @@ class NotificationHelper
 
         self::deliver($booking, $notification, $finished ? 'service_completion' : 'service_status_updates', $event, [
             'subject' => $label . ' – ARN-' . $booking->booking_ref,
-            'heading' => $label,
+            'heading' => self::statusHeading($booking, $name, $label),
             'message' => $message,
             'note' => $note,
             'status' => $label,
+            'progress' => self::progress($booking, $name),
+            'button' => ['See full timeline', config('mail.brand.app_url')],
         ]);
     }
 
@@ -138,26 +145,33 @@ class NotificationHelper
 
         $key = strtolower($state);
         $rejected = str_contains($key, 'reject');
+        $reupload = str_contains($key, 'upload');
         $event = match (true) {
-            str_contains($key, 'upload') => 'reupload_requested',
+            $reupload => 'reupload_requested',
             $rejected => 'document_rejected',
             default => 'status_changes',
         };
+        $needsUpload = $rejected || $reupload;
 
         self::deliver($booking, $notification, 'document_review', $event, [
             'subject' => 'Document ' . strtolower($label) . ' – ARN-' . $booking->booking_ref,
-            'heading' => 'Document ' . strtolower($label),
-            'message' => $message . ($rejected ? ' Please upload a corrected copy from the booking in the app.' : ''),
+            'heading' => $needsUpload ? 'Please re-upload a document' : 'Document ' . strtolower($label),
+            'message' => $needsUpload
+                ? "We couldn't accept one of the documents for your booking. Upload a new copy in the app so we can keep going."
+                : $message,
             'note' => $note,
-            'status' => null,
+            'status' => $label,
+            'item' => ['icon' => 'document', 'title' => ucfirst(strtolower($document)), 'meta' => $label],
+            'button' => [$needsUpload ? 'Upload a new copy' : 'View booking', config('mail.brand.app_url')],
         ]);
     }
 
 
-    public static function etaUpdated(Booking $booking, ?string $note = null): void
+    public static function etaUpdated(Booking $booking, ?string $note = null, ?\Carbon\CarbonInterface $previous = null): void
     {
+        $tz = config('booking.timezone');
         $when = $booking->estimated_completion_at
-            ?->timezone(config('booking.timezone'))
+            ?->timezone($tz)
             ->format('D, M j, Y, g:i A');
         $message = $when
             ? 'Your vehicle is now expected to be ready by ' . $when . '.'
@@ -174,10 +188,16 @@ class NotificationHelper
 
         self::deliver($booking, $notification, 'service_status_updates', 'status_changes', [
             'subject' => 'Estimated completion updated – ARN-' . $booking->booking_ref,
-            'heading' => 'Estimated completion updated',
-            'message' => $message,
+            'heading' => $when ? 'New estimated completion time' : 'Estimated completion updated',
+            'message' => $when && $previous ? "We've updated when we expect your car to be ready." : $message,
             'note' => $note,
             'status' => null,
+            'eyebrow' => 'Booking update',
+            'compare' => $when && $previous ? [
+                'was' => $previous->copy()->timezone($tz)->format('D, M j, g:i A'),
+                'now' => $booking->estimated_completion_at->copy()->timezone($tz)->format('D, M j, g:i A'),
+            ] : null,
+            'button' => ['View booking', config('mail.brand.app_url')],
         ]);
     }
 
@@ -198,8 +218,10 @@ class NotificationHelper
         self::deliver($booking, $notification, 'service_completion', 'certificate_available', [
             'subject' => 'Your certificate is ready – ARN-' . $booking->booking_ref,
             'heading' => 'Your certificate is ready',
-            'message' => $message,
-            'status' => null,
+            'message' => 'Your structural safety certificate is ready. You can view and download it from the booking in the app.',
+            'status' => SettingsHelper::stepLabel($booking, 'CERTIFICATE_ISSUED'),
+            'item' => ['icon' => 'certificate', 'title' => 'Structural safety certificate', 'meta' => 'Booking ARN-' . $booking->booking_ref],
+            'button' => ['View certificate', config('mail.brand.app_url')],
         ]);
     }
 
@@ -220,8 +242,16 @@ class NotificationHelper
         self::deliver($booking, $notification, 'booking_updates', 'appointment_reminder', [
             'subject' => 'Appointment reminder – ARN-' . $booking->booking_ref,
             'heading' => 'See you soon',
-            'message' => $message,
+            'message' => 'This is a reminder of your upcoming appointment with Ariana Auto Service.',
             'status' => null,
+            'eyebrow' => 'Reminder',
+            'appointment' => self::appointmentTile($booking),
+            'callouts' => [[
+                'title' => 'Need to change the time?',
+                'text' => 'Contact us from Profile › Help in the app and we will find a time that works.',
+            ]],
+            'rows' => [['Booking reference', 'ARN-' . $booking->booking_ref]],
+            'button' => ['View booking', config('mail.brand.app_url')],
         ]);
     }
 
@@ -288,13 +318,16 @@ class NotificationHelper
                 'is_sent' => false,
             ]);
 
-            Mail::to($client->email)->send(new BookingUpdateMail($email['subject'], [
+            $details = array_filter($email, fn($value) => $value !== null);
+            unset($details['subject']);
+
+            Mail::to($client->email)->send(new BookingUpdateMail($email['subject'], $details + [
                 'name' => trim($client->first_name) ?: 'there',
-                'heading' => $email['heading'],
-                'message' => $email['message'] ?? null,
-                'note' => $email['note'] ?? null,
-                'status' => $email['status'] ?? null,
+                'message' => null,
+                'note' => null,
+                'status' => null,
                 'rows' => self::bookingRows($booking),
+                'footer' => 'booking',
             ]));
 
             $record->update(['is_sent' => true]);
@@ -331,6 +364,65 @@ class NotificationHelper
         }
 
         return trim($date . ($time ? ', ' . $time : ''));
+    }
+
+
+    private static function appointmentTile(Booking $booking): ?array
+    {
+        if (!$booking->date) {
+            return null;
+        }
+
+        $time = substr((string) $booking->getRawOriginal('time'), 0, 5);
+
+        try {
+            $time = $time ? \Carbon\Carbon::createFromFormat('H:i', $time)->format('g:i A') : '';
+        } catch (\Throwable $e) {
+        }
+
+        $service = Service::where('ser_id', $booking->service)->value('name') ?: $booking->service_type;
+        $vehicle = Vehicle::whereIn('veh_id', (array) ($booking->vehicle_ids ?? []))->first();
+
+        return [
+            'month' => strtoupper($booking->date->format('M')),
+            'day' => $booking->date->format('j'),
+            'when' => trim($booking->date->format('l') . ($time ? ', ' . $time : '')),
+            'what' => implode(' · ', array_filter([$service, $vehicle ? self::vehicleLabel($vehicle) : null])),
+            'where' => config('mail.brand.shop_address'),
+        ];
+    }
+
+
+    /** The booking's status pipeline with each step marked done, current or still to come. */
+    private static function progress(Booking $booking, string $name): array
+    {
+        $pipeline = SettingsHelper::statusPipelines()[$booking->isStructuralSafety() ? 'structural_safety' : 'service'] ?? [];
+        $names = array_map(fn($step) => BookingState::normalizeName($step['name'] ?? $step['label'] ?? ''), $pipeline);
+        $current = array_search($name, $names, true);
+
+        if ($current === false) {
+            return [];
+        }
+
+        return array_map(fn($step, $i) => [
+            'label' => $step['label'] ?? BookingState::LABELS[$names[$i]] ?? $names[$i],
+            'state' => $i < $current ? 'done' : ($i === $current ? 'current' : 'todo'),
+        ], $pipeline, array_keys($pipeline));
+    }
+
+
+    private static function statusHeading(Booking $booking, string $name, string $label): string
+    {
+        return match ($name) {
+            BookingState::PLACED => 'Your booking is confirmed',
+            BookingState::VEHICLE_RECEIVED => "We've received your car",
+            BookingState::IN_PROGRESS => $booking->isStructuralSafety() ? 'Your inspection has started' : 'Work on your car has started',
+            BookingState::READY_FOR_PICKUP => 'Your car is ready for pickup',
+            BookingState::COMPLETED => 'Your booking is complete',
+            'DOCUMENTS_APPROVED' => 'Your documents are approved',
+            'CERTIFICATE_ISSUED' => 'Your certificate has been issued',
+            default => $label,
+        };
     }
 
 

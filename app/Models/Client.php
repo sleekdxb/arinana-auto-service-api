@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\TracksPasswordChanges;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
 class Client extends Authenticatable implements JWTSubject
 {
+    use TracksPasswordChanges;
+
     protected $fillable = [
         'client_id',
         'email',

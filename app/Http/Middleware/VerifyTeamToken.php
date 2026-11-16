@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Helpers\AdminCookie;
 use App\Models\Team;
 use Closure;
 use Illuminate\Http\Request;
@@ -15,20 +16,29 @@ class VerifyTeamToken
     {
         $token = $request->bearerToken();
 
+        if (!$token && ($token = AdminCookie::token($request)) && !AdminCookie::passesCsrfCheck($request)) {
+            return $this->deny('Missing X-Requested-With header.', 403);
+        }
+
         if (!$token) {
             return $this->deny('Access token is required.', 401);
         }
 
         try {
-            $teamId = JWTAuth::setToken($token)->getPayload()->get('team_id');
+            $payload = JWTAuth::setToken($token)->getPayload();
         } catch (JWTException $e) {
             return $this->deny('Invalid or expired access token.', 401);
         }
 
+        $teamId = $payload->get('team_id');
         $team = $teamId ? Team::with('currentStatus')->where('team_id', $teamId)->first() : null;
 
         if (!$team) {
             return $this->deny('Invalid access token.', 401);
+        }
+
+        if ($team->tokenPredatesPasswordChange($payload->get('iat'))) {
+            return $this->deny('Your password was changed. Please log in again.', 401);
         }
 
         if ($team->isSuspended()) {
@@ -40,6 +50,11 @@ class VerifyTeamToken
             return $this->deny('You do not have permission to do this.', 403);
         }
 
+        if ($request->filled('team_id') && $request->input('team_id') !== $team->team_id) {
+            return $this->deny('You can only act as yourself.', 403);
+        }
+
+        $request->merge(['team_id' => $team->team_id]);
         $request->attributes->set('team', $team);
 
         return $next($request);

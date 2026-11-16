@@ -64,8 +64,15 @@ class StaffHelper
             ]);
         });
 
-        $emailed = self::sendPassword($member, $password, 'Your Ariana staff account', 'Welcome to Ariana Auto Service',
-            'An account has been created for you on the Ariana admin dashboard. Sign in with the details below and change your password afterwards.');
+        $emailed = self::sendPassword($member, $password, 'Your Ariana staff account', 'Welcome to the Ariana team',
+            'An administrator has created your account for the Ariana admin dashboard. Sign in with the details below.', [
+                'eyebrow' => 'Your staff account',
+                'callouts' => [[
+                    'tone' => 'alert',
+                    'title' => 'Change it after you sign in',
+                    'text' => "This password is temporary. Don't forward this email or share the password with anyone.",
+                ]],
+            ]);
 
         return response()->json([
             'success' => true,
@@ -164,7 +171,14 @@ class StaffHelper
         TeamSession::where('team_id', $member->team_id)->delete();
 
         $emailed = self::sendPassword($member, $password, 'Your Ariana password was reset', 'Your password was reset',
-            'An administrator reset your password for the Ariana admin dashboard. Sign in with the temporary password below and change it afterwards.');
+            'An administrator reset your Ariana admin dashboard password. Use this temporary password to sign in.', [
+                'eyebrow' => 'Security',
+                'callouts' => [[
+                    'tone' => 'alert',
+                    'title' => 'Your old password no longer works',
+                    'text' => "Sign in and choose a new password. If you didn't ask for a reset, tell your administrator.",
+                ]],
+            ]);
 
         return response()->json([
             'success' => true,
@@ -231,10 +245,10 @@ class StaffHelper
         return Str::password(12, symbols: false);
     }
 
-    private static function sendPassword(Team $member, string $password, string $subject, string $heading, string $message): bool
+    private static function sendPassword(Team $member, string $password, string $subject, string $heading, string $message, array $extra = []): bool
     {
         try {
-            Mail::to($member->email)->send(new BookingUpdateMail($subject, [
+            Mail::to($member->email)->send(new BookingUpdateMail($subject, $extra + [
                 'name' => strtok((string) $member->full_name, ' ') ?: 'there',
                 'heading' => $heading,
                 'message' => $message,
@@ -242,9 +256,10 @@ class StaffHelper
                 'status' => null,
                 'rows' => [
                     ['Email', $member->email],
-                    ['Temporary password', $password],
+                    ['Temporary password', $password, 'mono'],
                 ],
-                'footer' => 'If you did not expect this email, please contact your administrator.',
+                'button' => ['Sign in to the dashboard', config('mail.brand.dashboard_url')],
+                'footer' => 'staff',
             ]));
 
             return true;

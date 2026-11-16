@@ -32,19 +32,19 @@ Route::prefix('client')->group(function () {
     Route::put('/reset_password', [ClientAuthController::class, 'reset_password']);
     Route::post('/login', [ClientAuthController::class, 'login']);
     Route::post('/logout', [ClientAuthController::class, 'logout'])->middleware('verify.client');
-    Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
-    Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile']);
     Route::get('/getServices', [BookingController::class, 'getServices']);
+    Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile'])->middleware('verify.client:team');
     Route::middleware('verify.client')->group(function () {
+        Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
         Route::post('/requestAccountDeletion', [InboxController::class, 'requestAccountDeletion']);
         Route::get('/getAccountDeletionRequest', [InboxController::class, 'getAccountDeletionRequest']);
         Route::delete('/cancelAccountDeletionRequest', [InboxController::class, 'cancelAccountDeletionRequest']);
+        Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
+        Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
+        Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
+        Route::put('/updatePreferences', [NotificationController::class, 'updatePreferences']);
+        Route::put('/updatePushToken', [NotificationController::class, 'updatePushToken']);
     });
-    Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
-    Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
-    Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
-    Route::put('/updatePreferences', [NotificationController::class, 'updatePreferences']);
-    Route::put('/updatePushToken', [NotificationController::class, 'updatePushToken']);
 });
 
 
@@ -56,7 +56,7 @@ Route::prefix('twoFactor')->group(function () {
 
 
 // Vehicle Clients Endpoints
-Route::prefix('vehicles')->group(function () {
+Route::prefix('vehicles')->middleware('verify.client')->group(function () {
     Route::get('/getVehicle', [VehicleController::class, 'getVehicle']);
     Route::post('/addVehicle', [VehicleController::class, 'addVehicle']);
     Route::put('/updateVehicle', [VehicleController::class, 'updateVehicle']);
@@ -65,12 +65,12 @@ Route::prefix('vehicles')->group(function () {
 
 
 // Media Upload Endpoints
-Route::prefix('media')->group(function () {
+Route::prefix('media')->middleware('verify.client:team')->group(function () {
     Route::post('/uploadFiles', [FileUploadController::class, 'uploadFiles']);
 });
 
 
-Route::prefix('booking')->group(function () {
+Route::prefix('booking')->middleware('verify.client')->group(function () {
     Route::post('/addBooking', [BookingController::class, 'addBooking']);
     Route::put('/updateBooking', [BookingController::class, 'updateBooking']);
     Route::delete('/deleteBooking', [BookingController::class, 'deleteBooking']);
@@ -81,7 +81,7 @@ Route::prefix('booking')->group(function () {
 });
 
 
-Route::prefix('notifications')->group(function () {
+Route::prefix('notifications')->middleware('verify.client')->group(function () {
     Route::get('/getNotifications', [NotificationController::class, 'getNotifications']);
     Route::put('/markRead', [NotificationController::class, 'markRead']);
 });
@@ -89,10 +89,12 @@ Route::prefix('notifications')->group(function () {
 
 Route::prefix('teamAuth')->group(function () {
     Route::post('/login', [TeamAuthController::class, 'login']);
-    Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
     Route::post('/logout', [TeamAuthController::class, 'logout']);
-    Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
-    Route::put('/updateProfile', [TeamAuthController::class, 'updateProfile']);
+    Route::middleware('verify.team')->group(function () {
+        Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
+        Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
+        Route::put('/updateProfile', [TeamAuthController::class, 'updateProfile']);
+    });
 });
 
 Route::prefix('team')->middleware('verify.team')->group(function () {
@@ -114,18 +116,16 @@ Route::prefix('team')->middleware('verify.team')->group(function () {
     });
 });
 
-Route::prefix('team')->group(function () {
+Route::prefix('team')->middleware('verify.team')->group(function () {
     Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
     Route::put('/setBookingFileState', [TeamController::class, 'setBookingFileState']);
     Route::put('/setVehicleFileState', [TeamController::class, 'setVehicleFileState']);
     Route::post('/getUsers', [TeamController::class, 'getUsers']);
     Route::put('/suspendAccount', [TeamController::class, 'suspendAccount']);
     Route::get('/getReportAnalytics', [TeamController::class, 'getReportAnalytics']);
-    Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
     Route::post('/addServices', [ServicesController::class, 'addServices']);
     Route::put('/updateServices', [ServicesController::class, 'updateServices']);
     Route::delete('/deleteServices', [ServicesController::class, 'deleteServices']);
-    Route::get('/getServices', [ServicesController::class, 'getServices']);
     Route::get('/getServices', [ServicesController::class, 'getServices']);
     Route::post('/getBookings', [TeamController::class, 'getBookings']);
     Route::post('/setBookingState', [TeamController::class, 'setBookingState']);
@@ -156,6 +156,3 @@ Route::prefix('team')->group(function () {
 
 // OTP Services Endpoints
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');

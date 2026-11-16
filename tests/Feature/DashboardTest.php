@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\Team;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
@@ -26,7 +27,18 @@ class DashboardTest extends TestCase
             'state_id' => 'STATE1',
         ]);
 
-        $this->postJson('/api/team/getDashboard', ['team_id' => 'TEAMADMIN'])
+        $admin = Team::create([
+            'team_id' => 'TEAMADMIN',
+            'email' => 'admin@example.com',
+            'hashed_email' => hash('sha256', 'admin@example.com'),
+            'full_name' => 'Admin',
+            'account_type' => 'admin',
+            'access_level' => Team::SUPER_ADMIN,
+            'state_id' => 'STATE-TEAMADMIN',
+            'password' => 'secret123',
+        ]);
+
+        $this->asStaff($admin)->postJson('/api/team/getDashboard', ['team_id' => 'TEAMADMIN'])
             ->assertOk()
             ->assertJsonPath('data.recent_bookings.0.booking_id', '126338')
             ->assertJsonPath('data.recent_bookings.0.appointment_date', 'Thu, Oct 15; 10:30 am');

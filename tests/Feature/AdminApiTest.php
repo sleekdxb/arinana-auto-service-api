@@ -63,7 +63,7 @@ class AdminApiTest extends TestCase
 
     private function vehicle(): Vehicle
     {
-        $this->postJson('/api/vehicles/addVehicle', [
+        $this->asClient()->postJson('/api/vehicles/addVehicle', [
             'client_id' => $this->client->client_id,
             'make' => 'Toyota',
             'model' => 'Corolla',
@@ -80,7 +80,7 @@ class AdminApiTest extends TestCase
     {
         $vehicle ??= Vehicle::first() ?? $this->vehicle();
 
-        return $this->postJson('/api/booking/addBooking', [
+        return $this->asClient()->postJson('/api/booking/addBooking', [
             'client_id' => $this->client->client_id,
             'vehicle_ids' => [$vehicle->veh_id],
             'service' => 'SERVICE_1',
@@ -97,12 +97,12 @@ class AdminApiTest extends TestCase
 
     public function test_availability_settings_drive_the_slots(): void
     {
-        $this->getJson('/api/team/getAvailability?team_id=' . self::TEAM)
+        $this->asStaff()->getJson('/api/team/getAvailability?team_id=' . self::TEAM)
             ->assertOk()
             ->assertJsonPath('data.opens_at', '08:00')
             ->assertJsonPath('data.slot_capacity', 3);
 
-        $this->putJson('/api/team/updateAvailability', $this->team([
+        $this->asStaff()->putJson('/api/team/updateAvailability', $this->team([
             'operating_days' => [1, 2, 3, 4, 5],
             'opens_at' => '09:00',
             'closes_at' => '12:00',
@@ -111,7 +111,7 @@ class AdminApiTest extends TestCase
             'lead_time_minutes' => 120,
         ]))->assertOk();
 
-        $days = collect($this->getJson('/api/booking/getAvailableSlots?from=2026-11-04&days=4')->json('data.days'))->keyBy('date');
+        $days = collect($this->asClient()->getJson('/api/booking/getAvailableSlots?from=2026-11-04&days=4')->json('data.days'))->keyBy('date');
 
         $this->assertSame(['09:00', '09:30', '10:00', '10:30', '11:00', '11:30'], array_column($days['2026-11-04']['slots'], 'time'));
         $this->assertFalse(collect($days['2026-11-04']['slots'])->firstWhere('time', '12:00') !== null);
@@ -122,32 +122,32 @@ class AdminApiTest extends TestCase
         $this->book('2026-11-05', '09:00')->assertCreated();
         $this->book('2026-11-05', '09:00')->assertStatus(422);
 
-        $this->putJson('/api/team/updateAvailability', $this->team(['opens_at' => '13:00', 'closes_at' => '12:00']))
+        $this->asStaff()->putJson('/api/team/updateAvailability', $this->team(['opens_at' => '13:00', 'closes_at' => '12:00']))
             ->assertStatus(422);
     }
 
     public function test_change_cutoff_blocks_late_reschedules_and_cancellations(): void
     {
-        $this->putJson('/api/team/updateAvailability', $this->team(['change_cutoff_hours' => 24]))->assertOk();
+        $this->asStaff()->putJson('/api/team/updateAvailability', $this->team(['change_cutoff_hours' => 24]))->assertOk();
         $soon = $this->book('2026-11-05', '08:00')->json('data.book_id');
         $later = $this->book('2026-11-09', '08:00')->json('data.book_id');
 
-        $this->putJson('/api/booking/updateBooking', ['book_id' => $soon, 'date' => '2026-11-10', 'time' => '09:00'])
+        $this->asClient()->putJson('/api/booking/updateBooking', ['book_id' => $soon, 'date' => '2026-11-10', 'time' => '09:00'])
             ->assertStatus(422);
-        $this->deleteJson('/api/booking/deleteBooking', ['book_id' => $soon])->assertStatus(422);
+        $this->asClient()->deleteJson('/api/booking/deleteBooking', ['book_id' => $soon])->assertStatus(422);
 
-        $this->putJson('/api/booking/updateBooking', ['book_id' => $later, 'date' => '2026-11-10', 'time' => '09:00'])
+        $this->asClient()->putJson('/api/booking/updateBooking', ['book_id' => $later, 'date' => '2026-11-10', 'time' => '09:00'])
             ->assertOk();
-        $this->deleteJson('/api/booking/deleteBooking', ['book_id' => $later])->assertOk();
+        $this->asClient()->deleteJson('/api/booking/deleteBooking', ['book_id' => $later])->assertOk();
     }
 
     public function test_document_requirements_and_pipelines_are_configurable(): void
     {
-        $this->getJson('/api/team/getDocumentRequirements?team_id=' . self::TEAM)
+        $this->asStaff()->getJson('/api/team/getDocumentRequirements?team_id=' . self::TEAM)
             ->assertOk()
             ->assertJsonPath('data.requirements.0.key', 'Proof_of_ownership');
 
-        $this->putJson('/api/team/updateDocumentRequirements', $this->team([
+        $this->asStaff()->putJson('/api/team/updateDocumentRequirements', $this->team([
             'requirements' => [
                 ['key' => 'Proof_of_ownership', 'name' => 'Proof of Ownership', 'required' => true],
                 ['key' => 'Repair_history', 'name' => 'Repair and Collision History', 'enabled' => false],
@@ -157,10 +157,10 @@ class AdminApiTest extends TestCase
 
         $this->assertSame(
             ['Proof_of_ownership', 'Insurance_letter'],
-            array_column($this->getJson('/api/booking/getDocumentRequirements')->json('data.requirements'), 'key')
+            array_column($this->asClient()->getJson('/api/booking/getDocumentRequirements')->json('data.requirements'), 'key')
         );
 
-        $this->putJson('/api/team/updateStatusPipelines', $this->team([
+        $this->asStaff()->putJson('/api/team/updateStatusPipelines', $this->team([
             'service' => [
                 ['label' => 'Booked'],
                 ['label' => 'Vehicle Received'],
@@ -169,25 +169,25 @@ class AdminApiTest extends TestCase
             ],
         ]))->assertOk()->assertJsonPath('data.service.2.name', 'WAITING_FOR_PARTS');
 
-        $this->putJson('/api/team/updateStatusPipelines', $this->team([
+        $this->asStaff()->putJson('/api/team/updateStatusPipelines', $this->team([
             'service' => [['label' => 'Vehicle Received'], ['label' => 'Completed']],
         ]))->assertStatus(422);
 
-        $this->getJson('/api/booking/getStatusPipelines')
+        $this->asClient()->getJson('/api/booking/getStatusPipelines')
             ->assertOk()
             ->assertJsonPath('data.structural_safety.3.label', 'Inspection in Progress');
     }
 
     public function test_admin_notification_settings_gate_channels(): void
     {
-        $this->putJson('/api/team/updateNotificationSettings', $this->team([
+        $this->asStaff()->putJson('/api/team/updateNotificationSettings', $this->team([
             'events' => [['key' => 'booking_confirmed', 'email' => false]],
         ]))->assertOk()->assertJsonPath('data.events.0.email', false)->assertJsonPath('data.events.0.push', true);
 
         $bookId = $this->book()->assertCreated()->json('data.book_id');
         Mail::assertNothingSent();
 
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
         Mail::assertSent(BookingUpdateMail::class, 1);
         $this->assertSame(2, ClientNotification::where('notifiable_id', $bookId)->count());
     }
@@ -196,10 +196,10 @@ class AdminApiTest extends TestCase
     {
         $bookId = $this->book()->assertCreated()->json('data.book_id');
 
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'IN_PROGRESS']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'IN_PROGRESS']))->assertOk();
         $this->assertSame('Inspection in Progress', ClientNotification::where('notifiable_id', $bookId)->latest('id')->value('subject'));
 
-        $this->putJson('/api/team/updateStatusPipelines', $this->team([
+        $this->asStaff()->putJson('/api/team/updateStatusPipelines', $this->team([
             'structural_safety' => [
                 ['name' => 'PLACED', 'label' => 'Booked'],
                 ['name' => 'VEHICLE_RECEIVED', 'label' => 'Car dropped off'],
@@ -208,12 +208,12 @@ class AdminApiTest extends TestCase
             ],
         ]))->assertOk();
 
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
         $this->assertSame('Car dropped off', ClientNotification::where('notifiable_id', $bookId)->latest('id')->value('subject'));
         Mail::assertSent(BookingUpdateMail::class, fn ($mail) => str_starts_with($mail->subjectLine, 'Car dropped off')
             && $mail->details['status'] === 'Car dropped off');
 
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'QUALITY_CHECK']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $bookId, 'name' => 'QUALITY_CHECK']))->assertOk();
         $notification = ClientNotification::where('notifiable_id', $bookId)->latest('id')->first();
         $this->assertSame('Quality check', $notification->subject);
         $this->assertStringEndsWith('is now quality check.', data_get($notification->data, 'body'));
@@ -223,21 +223,21 @@ class AdminApiTest extends TestCase
     {
         $bookId = $this->book()->json('data.book_id');
 
-        $this->postJson('/api/team/setBookingEta', $this->team([
+        $this->asStaff()->postJson('/api/team/setBookingEta', $this->team([
             'book_id' => $bookId,
             'estimated_completion_at' => '2026-11-07 15:00',
         ]))->assertOk();
         $this->assertSame('2026-11-07 20:00', Booking::first()->estimated_completion_at->utc()->format('Y-m-d H:i'));
         $this->assertSame('Estimated completion updated', ClientNotification::where('type', 'booking_eta')->value('subject'));
 
-        $this->getJson('/api/team/getTechnicians?team_id=' . self::TEAM)->assertOk()->assertJsonCount(2, 'data');
-        $this->postJson('/api/team/assignTechnician', $this->team(['book_id' => $bookId, 'technician_id' => 'TEAMTECH1']))
+        $this->asStaff()->getJson('/api/team/getTechnicians?team_id=' . self::TEAM)->assertOk()->assertJsonCount(2, 'data');
+        $this->asStaff()->postJson('/api/team/assignTechnician', $this->team(['book_id' => $bookId, 'technician_id' => 'TEAMTECH1']))
             ->assertOk()
             ->assertJsonPath('data.technician.full_name', 'Tech One');
-        $this->postJson('/api/team/assignTechnician', $this->team(['book_id' => $bookId, 'technician_id' => 'NOPE']))
+        $this->asStaff()->postJson('/api/team/assignTechnician', $this->team(['book_id' => $bookId, 'technician_id' => 'NOPE']))
             ->assertStatus(422);
 
-        $this->post('/api/team/uploadBookingCertificate', $this->team([
+        $this->asStaff()->post('/api/team/uploadBookingCertificate', $this->team([
             'book_id' => $bookId,
             'certificate' => UploadedFile::fake()->create('cert.pdf', 50, 'application/pdf'),
         ]))->assertCreated()->assertJsonPath('data.latest_state.state', 'APPROVED');
@@ -247,18 +247,18 @@ class AdminApiTest extends TestCase
         Storage::disk('hostinger')->assertExists($file->file_url);
         $this->assertSame(1, ClientNotification::where('type', 'booking_certificate')->count());
 
-        $booking = collect($this->postJson('/api/team/getBookings', $this->team([]))->json('data'))->firstWhere('book_id', $bookId);
+        $booking = collect($this->asStaff()->postJson('/api/team/getBookings', $this->team([]))->json('data'))->firstWhere('book_id', $bookId);
         $this->assertSame('TEAMTECH1', $booking['technician']['team_id']);
         $this->assertSame('APPROVED', $booking['files'][0]['latest_state']['state']);
         $this->assertNotNull($booking['estimated_completion_at']);
 
-        $client = $this->getJson('/api/booking/getClientBookings?client_id=' . $this->client->client_id)->json('data.0');
+        $client = $this->asClient()->getJson('/api/booking/getClientBookings?client_id=' . $this->client->client_id)->json('data.0');
         $this->assertNotNull($client['estimated_completion_at']);
     }
 
     public function test_edit_suspend_and_reactivate_a_client(): void
     {
-        $this->putJson('/api/team/updateClient', $this->team([
+        $this->asStaff()->putJson('/api/team/updateClient', $this->team([
             'client_id' => $this->client->client_id,
             'first_name' => 'Johnny',
             'email' => 'Johnny@Example.com',
@@ -269,26 +269,26 @@ class AdminApiTest extends TestCase
             ->assertJsonPath('data.account_type', 'dealer');
         $this->assertSame(hash('sha256', 'johnny@example.com'), $this->client->fresh()->hashed_email);
 
-        $this->putJson('/api/team/suspendAccount', $this->team(['client_id' => $this->client->client_id]))->assertOk();
+        $this->asStaff()->putJson('/api/team/suspendAccount', $this->team(['client_id' => $this->client->client_id]))->assertOk();
         $this->postJson('/api/client/login', ['email' => 'johnny@example.com', 'password' => 'secret123'])
             ->assertStatus(403)
             ->assertJsonPath('message', 'Your account has been suspended. Please contact support.');
 
-        $this->putJson('/api/team/reactivateAccount', $this->team(['client_id' => $this->client->client_id]))->assertOk();
+        $this->asStaff()->putJson('/api/team/reactivateAccount', $this->team(['client_id' => $this->client->client_id]))->assertOk();
         $this->assertSame('ACTIVE', ClientStatus::where('state_id', $this->client->fresh()->state_id)->value('code'));
     }
 
     public function test_user_search_and_type_filter(): void
     {
-        $this->postJson('/api/team/getUsers', $this->team(['key_word' => 'John Doe']))
+        $this->asStaff()->postJson('/api/team/getUsers', $this->team(['key_word' => 'John Doe']))
             ->assertOk()->assertJsonCount(1, 'data.data');
-        $this->postJson('/api/team/getUsers', $this->team(['key_word' => 'nobody']))
+        $this->asStaff()->postJson('/api/team/getUsers', $this->team(['key_word' => 'nobody']))
             ->assertOk()->assertJsonCount(0, 'data.data');
-        $this->postJson('/api/team/getUsers', $this->team(['customer_type' => 'individual']))
+        $this->asStaff()->postJson('/api/team/getUsers', $this->team(['customer_type' => 'individual']))
             ->assertOk()->assertJsonCount(1, 'data.data');
 
         $this->book();
-        $this->postJson('/api/team/getBookings', $this->team(['keyword' => 'John']))
+        $this->asStaff()->postJson('/api/team/getBookings', $this->team(['keyword' => 'John']))
             ->assertOk()->assertJsonCount(1, 'data');
     }
 
@@ -296,7 +296,7 @@ class AdminApiTest extends TestCase
     {
         $vehicle = $this->vehicle();
 
-        $this->postJson('/api/team/setVehicleState', $this->team(['veh_id' => $vehicle->veh_id, 'name' => 'In Service']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setVehicleState', $this->team(['veh_id' => $vehicle->veh_id, 'name' => 'In Service']))->assertOk();
         $this->assertNotNull($vehicle->fresh()->state_id);
 
         $file = VehicleFile::create([
@@ -307,7 +307,7 @@ class AdminApiTest extends TestCase
             'file_url' => 'vehicle/Documents/x.pdf',
         ]);
 
-        $this->putJson('/api/team/setVehicleFileState', $this->team(['file_id' => (string) $file->id, 'name' => 'approved']))
+        $this->asStaff()->putJson('/api/team/setVehicleFileState', $this->team(['file_id' => (string) $file->id, 'name' => 'approved']))
             ->assertCreated();
         $this->assertSame('APPROVED', VehicleFileState::where('file_id', $file->id)->value('state'));
     }
@@ -318,11 +318,11 @@ class AdminApiTest extends TestCase
         $this->book('2026-11-05', '09:00');
 
         Carbon::setTestNow(Carbon::parse('2026-11-05 09:00', 'America/Toronto'));
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $first, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $first, 'name' => 'VEHICLE_RECEIVED']))->assertOk();
         Carbon::setTestNow(Carbon::parse('2026-11-07 09:00', 'America/Toronto'));
-        $this->postJson('/api/team/setBookingState', $this->team(['book_id' => $first, 'name' => 'COMPLETED']))->assertOk();
+        $this->asStaff()->postJson('/api/team/setBookingState', $this->team(['book_id' => $first, 'name' => 'COMPLETED']))->assertOk();
 
-        $data = $this->getJson('/api/team/getReportAnalytics?team_id=' . self::TEAM)->assertOk()->json('data');
+        $data = $this->asStaff()->getJson('/api/team/getReportAnalytics?team_id=' . self::TEAM)->assertOk()->json('data');
 
         $this->assertSame(2, $data['figCard']['total_bookings']);
         $this->assertSame(1, $data['figCard']['active_bookings']);

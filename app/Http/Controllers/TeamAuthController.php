@@ -45,11 +45,32 @@ class TeamAuthController extends Controller
 
 
 
+    /** Staff may only read or change their own account through teamAuth. */
+    private function ownAccount(Request $request): ?JsonResponse
+    {
+        $own = $request->attributes->get('team')->team_id;
+
+        if ($request->filled('team_id') && $request->input('team_id') !== $own) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You can only act on your own account.',
+            ], 403);
+        }
+
+        $request->merge(['team_id' => $own]);
+
+        return null;
+    }
+
     public function reset_password(Request $request): JsonResponse
     {
+        if ($denied = $this->ownAccount($request)) {
+            return $denied;
+        }
+
         $validator = Validator::make($request->all(), [
-            'team_id' => 'required|string|exists:teams,team_id',
-            'password' => 'required|string|min:8',
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|different:current_password',
             'confirm_password' => 'required|string|same:password',
         ]);
 
@@ -65,6 +86,10 @@ class TeamAuthController extends Controller
 
     public function getProfile(Request $request): JsonResponse
     {
+        if ($denied = $this->ownAccount($request)) {
+            return $denied;
+        }
+
         $validator = Validator::make($request->all(), [
             'team_id' => 'required|string',
         ]);
@@ -81,6 +106,10 @@ class TeamAuthController extends Controller
 
     public function updateProfile(Request $request): JsonResponse
     {
+        if ($denied = $this->ownAccount($request)) {
+            return $denied;
+        }
+
         $validator = Validator::make($request->all(), [
             'team_id' => 'required|string',
             'email' => 'required|email',
