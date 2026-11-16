@@ -131,8 +131,14 @@ class AccountDeletionRequestHelper
             $deletion->client_name,
             'Your Ariana Auto Service account has been deleted',
             'Your account has been deleted',
-            'As you requested, your account and personal data have been permanently deleted. Records of completed services that we are required to keep have been anonymised. Thank you for choosing Ariana Auto Service.',
-            ['status' => 'Deleted']
+            'As you requested, your account and personal data have been permanently deleted. Records of completed services that we are required to keep have been anonymised.',
+            [
+                'status' => 'Deleted',
+                'status_tone' => 'neutral',
+                'callouts' => [['title' => 'Want to come back?', 'text' => "You're welcome to create a new account in the app at any time."]],
+                'closing' => 'Thank you for choosing Ariana Auto Service.',
+                'footer' => 'final',
+            ]
         );
 
         return response()->json([
@@ -208,9 +214,25 @@ class AccountDeletionRequestHelper
             }
         }
 
-        AccountMailHelper::send($deletion->client_email, $deletion->client_name, $title, $title, $message, [
+        $pending = $deletion->status === AccountDeletionRequest::PENDING;
+        $support = config('mail.brand.support_address');
+
+        AccountMailHelper::send($deletion->client_email, $deletion->client_name, $title, $pending ? 'We got your request to delete your account' : $title, $message, [
             'note' => $note,
+            'note_last' => true,
+            'status' => match ($deletion->status) {
+                AccountDeletionRequest::PENDING => 'Request received',
+                AccountDeletionRequest::CANCELLED => 'Cancelled',
+                AccountDeletionRequest::REJECTED => 'Declined',
+                default => null,
+            },
+            'status_tone' => 'neutral',
             'rows' => [['Request', $deletion->request_id], ['Requested', self::shopTime($deletion->created_at)]],
+            'callouts' => $pending ? [[
+                'tone' => 'alert',
+                'title' => "Didn't ask for this?",
+                'text' => 'Email ' . $support . ' right away and we will stop the request.',
+            ]] : [],
         ]);
     }
 

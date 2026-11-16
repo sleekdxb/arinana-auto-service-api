@@ -54,12 +54,10 @@ class ClientAuthController extends Controller
     public function reset_password(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required_without:client_id|nullable|string|email',
-            'client_id' => 'required_without:email|nullable|string',
+            'reset_token' => 'required|string',
+            'email' => 'nullable|string|email',
             'password' => 'required|string|min:8',
             'confirm_password' => 'required|string|same:password',
-            'business_name' => 'nullable|string',
-            'registration_number' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {

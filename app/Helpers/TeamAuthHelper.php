@@ -99,11 +99,10 @@ class TeamAuthHelper
                                 'email' => $user->email,
                             ],
                             'auth' => [
-                                'access_token' => $token,
                                 'session_id' => $session->session_id
                             ]
                         ]
-                    ], 200);
+                    ], 200)->withCookie(AdminCookie::make($token));
                 }
             }
 
@@ -151,10 +150,9 @@ class TeamAuthHelper
                     ],
                     'auth' => [
                         'session_id' => $session->session_id,
-                        'access_token' => $token
                     ]
                 ]
-            ], 200);
+            ], 200)->withCookie(AdminCookie::make($token));
 
         } catch (\Throwable $e) {
             report($e);
@@ -172,9 +170,13 @@ class TeamAuthHelper
     public static function logout(Request $request): JsonResponse
     {
         try {
-            // 1. Invalidate the JWT token
-            if ($token = JWTAuth::getToken()) {
-                JWTAuth::invalidate($token);
+            // 1. Invalidate the JWT token, whether it came as a header or the cookie
+            $token = $request->bearerToken() ?: AdminCookie::token($request);
+            if ($token) {
+                try {
+                    JWTAuth::setToken($token)->invalidate();
+                } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
+                }
             }
 
             // 2. Delete the team session
@@ -187,13 +189,13 @@ class TeamAuthHelper
                 return response()->json([
                     'success' => false,
                     'message' => 'Session not found or already deleted'
-                ], 404);
+                ], 404)->withCookie(AdminCookie::forget());
             }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Logged out successfully'
-            ], 200);
+            ], 200)->withCookie(AdminCookie::forget());
 
         } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
             return response()->json([
@@ -212,13 +214,14 @@ class TeamAuthHelper
 
     public static function reset_password(Request $request): JsonResponse
     {
-        $user = Team::where('team_id', $request->team_id)->first();
+        $user = $request->attributes->get('team');
 
-        if (!$user) {
+        if (!Hash::check($request->current_password, $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Team member not found'
-            ], 404);
+                'message' => 'Current password is incorrect.',
+                'errors' => ['current_password' => ['Current password is incorrect.']],
+            ], 422);
         }
 
         $user->password = Hash::make($request->password);
@@ -230,10 +233,12 @@ class TeamAuthHelper
             ], 500);
         }
 
+        AccountMailHelper::passwordChanged($user->email, $user->full_name, true);
+
         return response()->json([
             'success' => true,
-            'message' => 'Password has been reset successfully'
-        ], 200);
+            'message' => 'Password has been reset successfully',
+        ], 200)->withCookie(AdminCookie::make($user->freshAccessToken()));
     }
 
 

@@ -68,8 +68,7 @@ class OtpHelper
                     $user->first_name . " " . $user->last_name ?? 'NON',
                     $otpCode,
                     'verify_email',
-                    $user->email,
-                    'Verify Your Email – Arinana Auto Dispatch'
+                    $user->email
                 );
 
                 break;
@@ -80,8 +79,7 @@ class OtpHelper
                     $user->first_name . " " . $user->last_name ?? 'NON',
                     $otpCode,
                     'reset_password',
-                    $user->email,
-                    'Your Password Reset Code – Arinana Auto Dispatch'
+                    $user->email
                 );
 
                 break;
@@ -92,8 +90,7 @@ class OtpHelper
                     $user->first_name . " " . $user->last_name ?? 'NON',
                     $otpCode,
                     'un_auth_device',
-                    $user->email,
-                    'New Device Login Verification – Arinana Auto Dispatch'
+                    $user->email
                 );
 
                 break;
@@ -165,6 +162,7 @@ class OtpHelper
             // 1. Find an unused OTP.
             $otpRecord = Otp::where('otp_id', $otpId)
                 ->where('is_used', false)
+                ->where(fn($q) => $q->whereNull('target')->orWhere('target', '!=', Otp::RESET_TOKEN))
                 ->first();
 
             if (!$otpRecord) {
@@ -182,12 +180,70 @@ class OtpHelper
                 ], 400);
             }
 
-            // 3. Verify the submitted OTP.
+            // 3. Verify the submitted OTP, allowing a few attempts per code.
+            if ($otpRecord->attempts >= Otp::MAX_ATTEMPTS) {
+                $otpRecord->markAsUsed();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Too many incorrect attempts. Please request a new code.',
+                ], 429);
+            }
+
             if (!Hash::check($code, $otpRecord->otp)) {
+                $otpRecord->increment('attempts');
+
+                if ($otpRecord->attempts >= Otp::MAX_ATTEMPTS) {
+                    $otpRecord->markAsUsed();
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Too many incorrect attempts. Please request a new code.',
+                    ], 429);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid OTP code.',
                 ], 400);
+            }
+
+            /*
+             * Password reset: spend the code once and hand back a short-lived
+             * token that reset_password requires.
+             */
+            if ($otpRecord->target === 'RESET_PASSWORD') {
+                $resetToken = \Illuminate\Support\Facades\DB::transaction(function () use ($otpRecord) {
+                    $locked = Otp::where('otp_id', $otpRecord->otp_id)
+                        ->where('is_used', false)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$locked) {
+                        return null;
+                    }
+
+                    $locked->markAsUsed();
+
+                    return Otp::issueResetToken($locked->acc_id);
+                });
+
+                if (!$resetToken) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid OTP ID or OTP already used.',
+                    ], 404);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'OTP verified successfully.',
+                    'data' => [
+                        'target' => 'RESET_PASSWORD',
+                        'reset_token' => $resetToken,
+                        'expires_in' => Otp::RESET_TOKEN_MINUTES * 60,
+                    ],
+                ], 200);
             }
 
             /*

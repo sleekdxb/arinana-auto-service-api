@@ -21,7 +21,7 @@ class SendClientRegistrationEmail implements ShouldQueueAfterCommit
             'receiver_id' => $data['client_id'],
             'sender_id' => $data['sender_id'] ?? null,
             'mail_id' => $data['mail_id'] ?? null,
-            'subject' => 'Registration Successful',
+            'subject' => 'Welcome to Ariana Auto Service',
             'message' => $data['message'] ?? 'Your registration was successful.',
             'is_sent' => false,
         ]);

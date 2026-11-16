@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Http\JsonResponse;
+use App\Helpers\AccessHelper;
 use App\Helpers\VehicleHelper;
 
 class VehicleController extends Controller
@@ -76,6 +77,10 @@ class VehicleController extends Controller
             ], 422);
         }
 
+        if (!AccessHelper::ownsVehicles($request, [$request->veh_id])) {
+            return AccessHelper::notFound('Vehicle');
+        }
+
         return VehicleHelper::updateVehicle($request);
     }
 
@@ -92,6 +97,10 @@ class VehicleController extends Controller
                 'success' => false,
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        if (!AccessHelper::ownsVehicles($request, [$request->veh_id])) {
+            return AccessHelper::notFound('Vehicle');
         }
 
         return VehicleHelper::deleteVehicle($request);

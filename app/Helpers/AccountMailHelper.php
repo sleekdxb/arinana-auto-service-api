@@ -19,7 +19,7 @@ class AccountMailHelper
                 'note' => null,
                 'status' => null,
                 'rows' => [],
-                'footer' => 'If you have any questions, reply to this email or contact us at info@arianaautoservice.com.',
+                'footer' => 'account',
             ]));
 
             return true;
@@ -28,5 +28,32 @@ class AccountMailHelper
 
             return false;
         }
+    }
+
+    public static function passwordChanged(string $to, ?string $name, bool $staff = false): bool
+    {
+        $support = config('mail.brand.support_address');
+
+        return self::send($to, $name, $staff ? 'Your Ariana staff password was changed' : 'Your Ariana Auto Service password was changed', 'Your password was changed',
+            $staff
+                ? 'The password for your Ariana admin dashboard account was just changed. Other devices have been signed out.'
+                : 'The password for your Ariana Auto Service account was just changed. Other devices have been signed out.', [
+                'eyebrow' => 'Security alert',
+                'rows' => [
+                    ['When', now()->timezone(config('booking.timezone'))->format('D, M j, Y, g:i A')],
+                    ['Account', $to],
+                ],
+                'callouts' => [
+                    ['title' => 'This was you?', 'text' => "There's nothing more to do."],
+                    [
+                        'tone' => 'alert',
+                        'title' => "This wasn't you?",
+                        'text' => $staff
+                            ? 'Tell a super admin right away so they can reset your password.'
+                            : 'Open the app, tap Log in › Forgot password and set a new one, then email us at ' . $support . '.',
+                    ],
+                ],
+                'footer' => $staff ? 'staff' : 'account',
+            ]);
     }
 }

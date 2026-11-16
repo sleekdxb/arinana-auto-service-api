@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\AccessHelper;
+
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
@@ -74,6 +76,13 @@ class FileUploadController extends Controller
         }
 
         $target = $request->input('uploadProtocol.target');
+
+        if (!AccessHelper::canUploadTo($request, $target, (string) $request->input('uploadProtocol.ref_id'))) {
+            return response()->json([
+                'status' => false,
+                'message' => ucfirst(str_replace('_update', '', $target)) . ' not found.',
+            ], 404);
+        }
 
         // Step 2: Define file validation rules
         $fileRules = [];

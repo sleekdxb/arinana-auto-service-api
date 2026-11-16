@@ -511,8 +511,9 @@ class TeamHelper
             ? Carbon::parse($request->estimated_completion_at, config('booking.timezone'))->utc()
             : null;
 
+        $previous = $booking->estimated_completion_at;
         $booking->update(['estimated_completion_at' => $eta]);
-        NotificationHelper::etaUpdated($booking->fresh(), $request->input('note'));
+        NotificationHelper::etaUpdated($booking->fresh(), $request->input('note'), $previous);
 
         return response()->json([
             'success' => true,

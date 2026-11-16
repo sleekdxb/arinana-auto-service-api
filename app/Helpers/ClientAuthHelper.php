@@ -360,35 +360,32 @@ class ClientAuthHelper
 
     public static function reset_password(Request $request): JsonResponse
     {
-        $email = strtolower($request->email ?? '');
-        $password = $request->password;
+        $email = strtolower((string) $request->email);
 
-        // Generate the hashed email to match database
-        $emailHash = hash('sha256', $email);
+        $user = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $email) {
+            $token = \App\Models\Otp::lockResetToken((string) $request->reset_token);
+            $user = $token ? Client::where('client_id', $token->acc_id)->first() : null;
 
-        // Find the user by hashed_email
-        $user = Client::where('hashed_email', $emailHash)->first();
-        $sessions = ClientSession::where('client_id', $user->client_id)->get();
+            if (!$user || ($email !== '' && $user->hashed_email !== hash('sha256', $email))) {
+                return null;
+            }
 
-        $fcmTokens = $sessions
-            ->pluck('fcm_token')
-            ->filter()
-            ->unique()
-            ->values()
-            ->toArray();
+            $token->markAsUsed();
+            $user->password = Hash::make($request->password);
+            $user->save();
+
+            return $user;
+        });
 
         if (!$user) {
             return response()->json([
                 'success' => false,
-                'message' => 'User not found'
-            ], 404);
+                'message' => 'Your password reset has expired. Please request a new code.',
+            ], 403);
         }
 
-        // Hash and update password
-        $user->password = Hash::make($password);
-        $isSuccess = $user->save();
-        if ($isSuccess) {
-
+        if ($user->email) {
+            AccountMailHelper::passwordChanged($user->email, $user->first_name);
         }
 
         return response()->json([
@@ -526,14 +523,7 @@ class ClientAuthHelper
 
     public static function changePassword(Request $request): JsonResponse
     {
-        $client = Client::where('client_id', $request->client_id)->first();
-
-        if (!$client) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Client not found.',
-            ], 404);
-        }
+        $client = $request->attributes->get('client');
 
         if (!Hash::check($request->current_password, $client->password)) {
             return response()->json([
@@ -546,9 +536,14 @@ class ClientAuthHelper
         $client->password = Hash::make($request->password);
         $client->save();
 
+        if ($client->email) {
+            AccountMailHelper::passwordChanged($client->email, $client->first_name);
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Password changed successfully.',
+            'data' => ['access_token' => $client->freshAccessToken()],
         ], 200);
     }
 

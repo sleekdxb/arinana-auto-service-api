@@ -27,7 +27,7 @@ class OtpMail extends Mailable
         string $code,
         string $type,
         string $toEmail,
-        string $subjectLine = null
+        ?string $subjectLine = null
     ) {
         $this->name = $name;
         $this->code = $code;
@@ -46,19 +46,19 @@ class OtpMail extends Mailable
             switch ($this->type) {
 
                 case 'verify_email':
-                    $subject = 'Verify Your Email – Arinana Auto Service';
+                    $subject = $this->code . ' is your Ariana Auto Service verification code';
                     break;
 
                 case 'reset_password':
-                    $subject = 'Password Reset Request – Arinana Auto Service';
+                    $subject = $this->code . ' is your Ariana Auto Service password reset code';
                     break;
 
                 case 'un_auth_device':
-                    $subject = 'New Device Login Verification – Arinana Auto Service';
+                    $subject = $this->code . ' is your Ariana Auto Service sign-in code';
                     break;
 
                 default:
-                    $subject = 'Your Verification Code – Arinana Auto Service';
+                    $subject = $this->code . ' is your Ariana Auto Service code';
                     break;
             }
         }
