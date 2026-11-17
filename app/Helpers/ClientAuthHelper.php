@@ -145,6 +145,8 @@ class ClientAuthHelper
 
 
 
+            $otpVerified = $otpVerified || in_array(strtolower($user->email), config('auth.review_accounts'), true);
+
             $expirationTime = now()->addDays(7);
             $currentDeviceKey = md5($request->ip() . $request->header('User-Agent'));
 

@@ -122,4 +122,9 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    'review_accounts' => array_values(array_filter(array_map(
+        fn ($email) => strtolower(trim($email)),
+        explode(',', (string) env('REVIEW_ACCOUNT_EMAILS', ''))
+    ))),
+
 ];
