@@ -30,7 +30,6 @@ class ClientLogoutTest extends TestCase
     private function addSession(Client $client, string $id): void
     {
         ClientSession::create([
-            'id' => 'ID_' . $id,
             'client_id' => $client->client_id,
             'session_id' => $id,
             'payload' => '{}',
