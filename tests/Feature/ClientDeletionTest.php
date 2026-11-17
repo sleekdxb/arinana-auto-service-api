@@ -182,7 +182,7 @@ class ClientDeletionTest extends TestCase
         $certificate = $this->file('booking/Certificates/BOOKDONE/cert.pdf');
         BookingFile::create(['book_id' => 'BOOKDONE', 'client_id' => 'CLIENTA', 'file_name' => 'Structural_Safety_Certificate.pdf', 'file_size' => 1, 'file_type' => 'application/pdf', 'file_url' => $certificate]);
 
-        ClientSession::create(['id' => 'SESSION1', 'client_id' => 'CLIENTA', 'session_id' => 'S1', 'payload' => '{}', 'last_activity' => time(), 'fcm_token' => 'push']);
+        ClientSession::create(['client_id' => 'CLIENTA', 'session_id' => 'S1', 'payload' => '{}', 'last_activity' => time(), 'fcm_token' => 'push']);
         ClientNotification::create(['notification_id' => 'N1', 'client_id' => 'CLIENTA', 'type' => 'booking', 'subject' => 'Hi']);
         Otp::create(['acc_id' => 'CLIENTA', 'otp_id' => 'O1', 'otp' => '1234', 'target' => 'login', 'is_used' => false, 'expires_at' => now()]);
 
