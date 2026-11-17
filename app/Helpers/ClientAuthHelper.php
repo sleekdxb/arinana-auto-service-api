@@ -31,6 +31,13 @@ class ClientAuthHelper
                 ], 422);
             }
 
+            if ($request->filled('phone') && Client::where('phone', $request->phone)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phone number already in use'
+                ], 422);
+            }
+
             /*
             |--------------------------------------------------------------------------
             | Generate Account ID
