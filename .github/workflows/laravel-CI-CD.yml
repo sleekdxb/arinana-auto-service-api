@@ -69,17 +69,33 @@ jobs:
           echo "Deploying LIVE (main)..."
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
-            echo "First time clone..."
-            rm -rf "$DEPLOY_DIR"
-            git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_DIR"
+            if [ -d "$DEPLOY_DIR" ] && [ -n "$(ls -A "$DEPLOY_DIR")" ]; then
+              echo "Existing files without git, attaching repo in place..."
+              cd "$DEPLOY_DIR"
+              git init
+              git remote add origin "$REPO_URL"
+            else
+              echo "First time clone..."
+              git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_DIR"
+            fi
           fi
 
           cd "$DEPLOY_DIR"
 
+          if [ -f .env ]; then
+            mkdir -p "$HOME/env-backups"
+            cp .env "$HOME/env-backups/$(basename "$DEPLOY_DIR")-$(date +%F-%H%M%S).env"
+          fi
+
           git remote set-url origin "$REPO_URL"
           git fetch origin "$BRANCH"
           git reset --hard "origin/$BRANCH"
+          git checkout -B "$BRANCH"
 
+          if [ ! -f .env ]; then
+            echo ".env is missing in $DEPLOY_DIR, create it before deploying"
+            exit 1
+          fi
 
           php artisan config:clear
           php artisan config:cache
@@ -114,18 +130,33 @@ jobs:
           echo "Deploying TESTING (Testing-Server)..."
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
-            echo "First time clone..."
-            rm -rf "$DEPLOY_DIR"
-            git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_DIR"
+            if [ -d "$DEPLOY_DIR" ] && [ -n "$(ls -A "$DEPLOY_DIR")" ]; then
+              echo "Existing files without git, attaching repo in place..."
+              cd "$DEPLOY_DIR"
+              git init
+              git remote add origin "$REPO_URL"
+            else
+              echo "First time clone..."
+              git clone -b "$BRANCH" "$REPO_URL" "$DEPLOY_DIR"
+            fi
           fi
 
           cd "$DEPLOY_DIR"
 
+          if [ -f .env ]; then
+            mkdir -p "$HOME/env-backups"
+            cp .env "$HOME/env-backups/$(basename "$DEPLOY_DIR")-$(date +%F-%H%M%S).env"
+          fi
+
           git remote set-url origin "$REPO_URL"
           git fetch origin "$BRANCH"
           git reset --hard "origin/$BRANCH"
+          git checkout -B "$BRANCH"
 
-
+          if [ ! -f .env ]; then
+            echo ".env is missing in $DEPLOY_DIR, create it before deploying"
+            exit 1
+          fi
 
           php artisan config:clear
           php artisan config:cache
