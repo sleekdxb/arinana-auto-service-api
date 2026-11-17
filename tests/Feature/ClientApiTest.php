@@ -1,0 +1,765 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Booking;
+use App\Models\BookingFile;
+use App\Models\BookingState;
+use App\Models\Client;
+use App\Models\ClientFile;
+use App\Models\Team;
+use App\Models\Vehicle;
+use Carbon\Carbon;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use Tests\TestCase;
+
+class ClientApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Client $client;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Carbon::setTestNow(Carbon::parse('2026-11-04 10:30', 'America/Toronto'));
+        Storage::fake('hostinger');
+
+        $this->client = Client::create([
+            'client_id' => 'CLIENTTEST1',
+            'email' => 'owner@example.com',
+            'hashed_email' => hash('sha256', 'owner@example.com'),
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'account_type' => 'dealer',
+            'phone' => '+15550001',
+            'state_id' => 'STATE-CLIENT1',
+            'password' => 'secret123',
+        ]);
+
+        Team::create([
+            'team_id' => 'TEAMTEST1',
+            'email' => 'admin@example.com',
+            'hashed_email' => hash('sha256', 'admin@example.com'),
+            'full_name' => 'Admin',
+            'account_type' => 'admin',
+            'phone' => '+15559999',
+            'state_id' => 'STATE-TEAM1',
+            'password' => 'secret123',
+        ]);
+    }
+
+    private function addVehicle(string $plate = 'ABC123'): Vehicle
+    {
+        $this->asClient()->postJson('/api/vehicles/addVehicle', [
+            'client_id' => $this->client->client_id,
+            'make' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2021,
+            'color' => 'Black',
+            'plate_number' => $plate,
+            'vin' => 'VIN' . $plate,
+            'mileage' => 42100,
+        ])->assertCreated();
+
+        return Vehicle::where('plate_number', $plate)->firstOrFail();
+    }
+
+    /** Requests a reset code and returns [otp_id, code]. */
+    private function requestResetCode(): array
+    {
+        $otpId = $this->postJson('/api/twoFactor/generateOtp', [
+            'email' => 'owner@example.com',
+            'target' => 'RESET_PASSWORD',
+        ])->assertOk()->json('data.otp_id');
+
+        $code = null;
+        \Illuminate\Support\Facades\Mail::assertSent(\App\Mail\OtpMail::class, function ($mail) use (&$code) {
+            $code = (string) $mail->code;
+
+            return true;
+        });
+
+        return [$otpId, $code];
+    }
+
+    private function resetWith(?string $token, string $password = 'newsecret123')
+    {
+        return $this->putJson('/api/client/reset_password', array_filter([
+            'reset_token' => $token,
+            'email' => 'owner@example.com',
+            'password' => $password,
+            'confirm_password' => $password,
+        ]));
+    }
+
+    public function test_reset_password_requires_a_verified_reset_token(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+
+        $this->resetWith(null)->assertStatus(422)->assertJsonValidationErrors('reset_token');
+        $this->resetWith('RESET_TOKEN_forged.secret')->assertForbidden();
+
+        [$otpId] = $this->requestResetCode();
+        $this->resetWith($otpId . '.whatever')->assertForbidden();
+
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('secret123', $this->client->fresh()->password));
+        \Illuminate\Support\Facades\Mail::assertNotSent(\App\Mail\BookingUpdateMail::class);
+    }
+
+    public function test_verified_reset_code_gives_a_single_use_token(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        [$otpId, $code] = $this->requestResetCode();
+
+        $token = $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $code])
+            ->assertOk()->assertJsonPath('data.target', 'RESET_PASSWORD')
+            ->json('data.reset_token');
+        $this->assertNotEmpty($token);
+
+        $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $code])->assertNotFound();
+        [$tokenId, $secret] = explode('.', $token, 2);
+        $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $tokenId, 'code' => $secret])->assertNotFound();
+
+        $this->resetWith($token)->assertOk()->assertJsonPath('success', true);
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('newsecret123', $this->client->fresh()->password));
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\BookingUpdateMail::class,
+            fn($mail) => $mail->hasTo('owner@example.com') && $mail->details['heading'] === 'Your password was changed'
+        );
+
+        $this->resetWith($token, 'another123')->assertForbidden();
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('newsecret123', $this->client->fresh()->password));
+    }
+
+    public function test_reset_token_expires_and_must_match_the_email(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        [$otpId, $code] = $this->requestResetCode();
+        $token = $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $code])->json('data.reset_token');
+
+        $this->putJson('/api/client/reset_password', [
+            'reset_token' => $token,
+            'email' => 'someone-else@example.com',
+            'password' => 'newsecret123',
+            'confirm_password' => 'newsecret123',
+        ])->assertForbidden();
+
+        Carbon::setTestNow(now()->addMinutes(\App\Models\Otp::RESET_TOKEN_MINUTES + 1));
+        $this->resetWith($token)->assertForbidden();
+    }
+
+    public function test_otp_locks_after_too_many_wrong_codes(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        [$otpId, $code] = $this->requestResetCode();
+        $wrong = $code === '000000' ? '111111' : '000000';
+
+        for ($i = 1; $i < \App\Models\Otp::MAX_ATTEMPTS; $i++) {
+            $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $wrong])->assertStatus(400);
+        }
+        $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $wrong])->assertStatus(429);
+
+        $this->postJson('/api/twoFactor/verifyOtp', ['otp_id' => $otpId, 'code' => $code])->assertNotFound();
+    }
+
+    public function test_vin_is_optional_and_any_length(): void
+    {
+        $vehicle = fn (string $plate, ?string $vin) => $this->asClient()->postJson('/api/vehicles/addVehicle', [
+            'client_id' => $this->client->client_id,
+            'make' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2021,
+            'color' => 'Black',
+            'plate_number' => $plate,
+            'vin' => $vin,
+        ]);
+
+        $vehicle('NOVIN1', null)->assertCreated();
+        $vehicle('NOVIN2', '')->assertCreated();
+        $this->assertSame(2, Vehicle::whereNull('vin')->count());
+
+        $vehicle('LONGVIN', 'jtmab7aj5r1234567-chassis-2041')->assertCreated();
+        $this->assertSame('JTMAB7AJ5R1234567-CHASSIS-2041', Vehicle::where('plate_number', 'LONGVIN')->value('vin'));
+
+        $vehicle('DUPVIN', 'JTMAB7AJ5R1234567-CHASSIS-2041')->assertStatus(422)->assertJsonValidationErrors('vin');
+        $vehicle('TOOLONG', str_repeat('X', 65))->assertStatus(422)->assertJsonValidationErrors('vin');
+
+        $long = Vehicle::where('plate_number', 'LONGVIN')->firstOrFail();
+        $this->asClient()->putJson('/api/vehicles/updateVehicle', [
+            'veh_id' => $long->veh_id,
+            'make' => 'Toyota',
+            'model' => 'Corolla',
+            'year' => 2021,
+            'color' => 'Black',
+            'plate_number' => 'LONGVIN',
+            'vin' => '',
+        ])->assertOk();
+        $this->assertNull($long->fresh()->vin);
+    }
+
+    private function book(Vehicle $vehicle, string $date = '2026-11-05', string $time = '08:00')
+    {
+        return $this->asClient()->postJson('/api/booking/addBooking', [
+            'client_id' => $this->client->client_id,
+            'vehicle_ids' => [$vehicle->veh_id],
+            'service' => 'SERVICE_1',
+            'service_type' => 'Oil Change',
+            'date' => $date,
+            'time' => $time,
+        ]);
+    }
+
+    public function test_booking_documents_attach_and_bookings_return_timeline(): void
+    {
+        $vehicle = $this->addVehicle();
+        $bookId = $this->book($vehicle)->assertCreated()->json('data.book_id');
+
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode([
+                'target' => 'booking',
+                'ref_id' => $bookId,
+                'upload_at' => '2026-11-04 10:31:00',
+            ]),
+            'booking_doc' => [
+                UploadedFile::fake()->create('Proof_of_ownership.pdf', 100, 'application/pdf'),
+                UploadedFile::fake()->create('Repair_history.pdf', 100, 'application/pdf'),
+            ],
+        ])->assertOk();
+
+        $this->assertSame(2, BookingFile::where('book_id', $bookId)->where('client_id', $this->client->client_id)->count());
+
+        $file = BookingFile::where('book_id', $bookId)->where('file_name', 'Repair_history.pdf')->firstOrFail();
+
+        $this->asStaff()->putJson('/api/team/setBookingFileState', [
+            'file_id' => (string) $file->id,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'rejected',
+            'note' => 'Document is blurry',
+        ])->assertCreated();
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'Vehicle Received',
+        ])->assertOk();
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'IN_PROGRESS',
+        ])->assertOk();
+
+        $booking = $this->asClient()->getJson('/api/booking/getClientBookings?client_id=' . $this->client->client_id)
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame([$vehicle->veh_id], $booking['vehicle_ids']);
+        $this->assertSame(['PLACED', 'VEHICLE_RECEIVED', 'IN_PROGRESS'], array_column($booking['states'], 'name'));
+        $this->assertSame('IN_PROGRESS', $booking['state']['name']);
+        $this->assertSame(
+            'Service in Progress',
+            \App\Models\ClientNotification::where('type', 'booking_status')->latest('id')->first()->subject
+        );
+        $this->assertSame('READY_FOR_PICKUP', BookingState::normalizeName('Ready for Pickup'));
+        $this->assertSame('PLACED', BookingState::normalizeName('Booked'));
+        $this->assertSame('COMPLETED', BookingState::normalizeName('completed'));
+        $this->assertSame('IN_PROGRESS', BookingState::normalizeName('INSPECTION IN PROGRESS'));
+        $this->assertSame('IN_PROGRESS', BookingState::normalizeName('SERVICE IN PROGRESS'));
+        $this->assertSame($vehicle->veh_id, $booking['vehicles'][0]['veh_id']);
+        $this->assertArrayHasKey('files', $booking['vehicles'][0]);
+
+        $files = collect($booking['files'])->keyBy('file_name');
+        $this->assertSame('UPLOADED', $files['Proof_of_ownership.pdf']['latest_state']['state']);
+        $this->assertSame('REJECTED', $files['Repair_history.pdf']['latest_state']['state']);
+        $this->assertSame('Document is blurry', $files['Repair_history.pdf']['latest_state']['note']);
+    }
+
+    private function bookStructural(Vehicle $vehicle, array $documents): string
+    {
+        $bookId = $this->asClient()->postJson('/api/booking/addBooking', [
+            'client_id' => $this->client->client_id,
+            'vehicle_ids' => [$vehicle->veh_id],
+            'service' => 'SERVICE_2',
+            'service_type' => 'Structural Safety Inspection',
+            'date' => '2026-11-05',
+            'time' => '09:00',
+        ])->assertCreated()->json('data.book_id');
+
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 10:31:00']),
+            'booking_doc' => array_map(
+                fn ($name) => UploadedFile::fake()->create($name . '.pdf', 100, 'application/pdf'),
+                $documents
+            ),
+        ])->assertOk();
+
+        return $bookId;
+    }
+
+    private function reviewDocument(string $bookId, string $name, string $decision): void
+    {
+        $file = BookingFile::where('book_id', $bookId)->where('file_name', $name . '.pdf')->latest('id')->firstOrFail();
+
+        $this->asStaff()->putJson('/api/team/setBookingFileState', [
+            'file_id' => (string) $file->id,
+            'team_id' => 'TEAMTEST1',
+            'name' => $decision,
+        ])->assertCreated();
+    }
+
+    private function bookingStatus(string $bookId): string
+    {
+        $booking = Booking::where('book_id', $bookId)->firstOrFail();
+
+        return BookingState::where('state_id', $booking->state_id)->value('name');
+    }
+
+    public function test_booking_moves_to_documents_approved_once_every_document_is_approved(): void
+    {
+        $vehicle = $this->addVehicle();
+        $bookId = $this->bookStructural($vehicle, ['Proof_of_ownership', 'Repair_history']);
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->reviewDocument($bookId, 'Repair_history', 'REJECTED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_doc' => [UploadedFile::fake()->create('Repair_history.pdf', 100, 'application/pdf')],
+        ])->assertOk();
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+        $this->assertSame(
+            'Documents Approved',
+            \App\Models\ClientNotification::where('type', 'booking_status')->latest('id')->first()->subject
+        );
+        $this->assertSame(
+            'DOCUMENTS_APPROVED',
+            \App\Models\VehicleState::where('state_id', $vehicle->fresh()->state_id)->value('name')
+        );
+
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+        $this->assertSame(1, BookingState::where('book_id', $bookId)->where('name', 'DOCUMENTS_APPROVED')->count());
+    }
+
+    public function test_requirements_set_a_type_and_number_of_files(): void
+    {
+        $this->asClient()->getJson('/api/booking/getDocumentRequirements')
+            ->assertOk()
+            ->assertJsonPath('data.requirements.0.type', 'document')
+            ->assertJsonPath('data.requirements.0.count', 1);
+
+        $this->asStaff()->putJson('/api/team/updateDocumentRequirements', [
+            'team_id' => 'TEAMTEST1',
+            'requirements' => [
+                ['key' => 'Proof_of_ownership', 'name' => 'Proof of Ownership', 'required' => true],
+                ['name' => 'Vehicle photos', 'description' => 'All four sides', 'required' => true, 'type' => 'image', 'count' => 2],
+            ],
+        ])->assertOk();
+
+        $this->asClient()->getJson('/api/booking/getDocumentRequirements')
+            ->assertOk()
+            ->assertJsonPath('data.requirements.1.key', 'Vehicle_photos')
+            ->assertJsonPath('data.requirements.1.type', 'image')
+            ->assertJsonPath('data.requirements.1.count', 2);
+
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_img' => [
+                UploadedFile::fake()->create('Vehicle_photos_1.heic', 100, 'image/heic'),
+                UploadedFile::fake()->create('Vehicle_photos_2.webp', 100, 'image/webp'),
+            ],
+        ])->assertOk();
+
+        foreach (['Vehicle_photos_1.heic', 'Vehicle_photos_2.webp'] as $name) {
+            $this->assertSame('PLACED', $this->bookingStatus($bookId));
+            $file = BookingFile::where('book_id', $bookId)->where('file_name', $name)->firstOrFail();
+            $this->asStaff()->putJson('/api/team/setBookingFileState', [
+                'file_id' => (string) $file->id, 'team_id' => 'TEAMTEST1', 'name' => 'APPROVED',
+            ])->assertCreated();
+        }
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_booking_documents_accept_word_and_spreadsheet_files(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 11:00:00']),
+            'booking_doc' => [
+                UploadedFile::fake()->create('Repair_history.docx', 100, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                UploadedFile::fake()->create('Invoice.xlsx', 100, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
+            ],
+        ])->assertOk();
+
+        $this->assertSame(3, BookingFile::where('book_id', $bookId)->count());
+    }
+
+    public function test_required_document_alone_is_enough(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_structural_service_with_a_sub_type_is_recognised(): void
+    {
+        \App\Models\Service::create(['ser_id' => 'SERVICE_3', 'name' => 'Structural Safety', 'type' => ['Full Inspection']]);
+        $vehicle = $this->addVehicle();
+        $bookId = $this->asClient()->postJson('/api/booking/addBooking', [
+            'client_id' => $this->client->client_id,
+            'vehicle_ids' => [$vehicle->veh_id],
+            'service' => 'SERVICE_3',
+            'service_type' => 'Full Inspection',
+            'date' => '2026-11-05',
+            'time' => '10:00',
+        ])->assertCreated()->json('data.book_id');
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode(['target' => 'booking', 'ref_id' => $bookId, 'upload_at' => '2026-11-04 10:31:00']),
+            'booking_doc' => [UploadedFile::fake()->create('Proof_of_ownership.pdf', 100, 'application/pdf')],
+        ])->assertOk();
+
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('DOCUMENTS_APPROVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_missing_required_document_keeps_booking_placed(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Repair_history']);
+
+        $this->reviewDocument($bookId, 'Repair_history', 'APPROVED');
+
+        $this->assertSame('PLACED', $this->bookingStatus($bookId));
+    }
+
+    public function test_approval_does_not_move_a_booking_already_past_booked(): void
+    {
+        $bookId = $this->bookStructural($this->addVehicle(), ['Proof_of_ownership']);
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'VEHICLE_RECEIVED',
+        ])->assertOk();
+        $this->reviewDocument($bookId, 'Proof_of_ownership', 'APPROVED');
+
+        $this->assertSame('VEHICLE_RECEIVED', $this->bookingStatus($bookId));
+    }
+
+    public function test_upload_to_unknown_booking_is_rejected(): void
+    {
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode([
+                'target' => 'booking',
+                'ref_id' => 'BOOKMISSING',
+                'upload_at' => '2026-11-04 10:31:00',
+            ]),
+            'booking_doc' => [UploadedFile::fake()->create('Proof_of_ownership.pdf', 10, 'application/pdf')],
+        ])->assertNotFound();
+    }
+
+    public function test_available_slots_reflect_hours_and_bookings(): void
+    {
+        config(['booking.slot_capacity' => 1]);
+        $vehicle = $this->addVehicle();
+        $this->book($vehicle, '2026-11-05', '09:00')->assertCreated();
+
+        $days = $this->asClient()->getJson('/api/booking/getAvailableSlots?from=2026-11-04&days=5')
+            ->assertOk()
+            ->json('data.days');
+
+        $this->assertCount(5, $days);
+
+        $today = collect($days[0]['slots'])->keyBy('time');
+        $this->assertFalse($today['10:00']['available']);
+        $this->assertTrue($today['11:00']['available']);
+        $this->assertSame('15:00', $today->keys()->last());
+
+        $thursday = collect($days[1]['slots'])->keyBy('time');
+        $this->assertFalse($thursday['09:00']['available']);
+        $this->assertTrue($thursday['08:00']['available']);
+
+        $sunday = collect($days)->firstWhere('date', '2026-11-08');
+        $this->assertFalse($sunday['is_open']);
+        $this->assertSame([], $sunday['slots']);
+
+        $this->book($vehicle, '2026-11-05', '09:00')->assertStatus(422)->assertJsonPath('errors.time.0', 'This time slot is fully booked. Please choose another time.');
+        $this->book($vehicle, '2026-11-08', '09:00')->assertStatus(422);
+        $this->book($vehicle, '2026-11-04', '08:00')->assertStatus(422);
+        $this->book($vehicle, '2026-11-05', '18:00')->assertStatus(422);
+    }
+
+    public function test_rescheduling_keeps_own_slot(): void
+    {
+        config(['booking.slot_capacity' => 1]);
+        $vehicle = $this->addVehicle();
+        $bookId = $this->book($vehicle, '2026-11-05', '09:00')->json('data.book_id');
+
+        $this->asClient()->putJson('/api/booking/updateBooking', ['book_id' => $bookId, 'time' => '09:00', 'note' => 'same'])
+            ->assertOk();
+        $this->asClient()->putJson('/api/booking/updateBooking', ['book_id' => $bookId, 'date' => '2026-11-06', 'time' => '10:00'])
+            ->assertOk();
+
+        $this->assertSame('10:00', substr(Booking::where('book_id', $bookId)->first()->getRawOriginal('time'), 0, 5));
+    }
+
+    public function test_notifications_feed_and_mark_read(): void
+    {
+        $vehicle = $this->addVehicle();
+        $this->book($vehicle)->assertCreated();
+
+        $response = $this->asClient()->getJson('/api/notifications/getNotifications?client_id=' . $this->client->client_id)
+            ->assertOk()
+            ->assertJsonPath('unread_count', 2);
+
+        $this->assertSame(['booking_placed', 'vehicle_added'], array_column($response->json('data.data'), 'type'));
+        $this->assertSame('New Vehicle Added!', $response->json('data.data.1.title'));
+        $this->assertSame('2021 Toyota Corolla - Black has been added to your vehicles.', $response->json('data.data.1.body'));
+        $this->assertSame(Vehicle::first()->veh_id, $response->json('data.data.1.ref_id'));
+        $this->assertFalse($response->json('data.data.1.read'));
+
+        $firstId = $response->json('data.data.0.notif_id');
+
+        $this->asClient()->putJson('/api/notifications/markRead', [
+            'client_id' => $this->client->client_id,
+            'notif_ids' => [$firstId],
+        ])->assertOk()->assertJsonPath('data.unread_count', 1);
+
+        $this->asClient()->putJson('/api/notifications/markRead', ['client_id' => $this->client->client_id])
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 0);
+    }
+
+    public function test_preferences_default_and_update(): void
+    {
+        $this->asClient($this->client)->getJson('/api/client/getPreferences?client_id=' . $this->client->client_id)
+            ->assertOk()
+            ->assertJsonPath('data.push_enabled', true)
+            ->assertJsonPath('data.sms_enabled', false);
+
+        $this->asClient($this->client)->putJson('/api/client/updatePreferences', [
+            'client_id' => $this->client->client_id,
+            'sms_enabled' => true,
+            'booking_updates' => false,
+        ])->assertOk()
+            ->assertJsonPath('data.sms_enabled', true)
+            ->assertJsonPath('data.booking_updates', false)
+            ->assertJsonPath('data.email_enabled', true);
+    }
+
+    public function test_update_profile_business_fields_and_email(): void
+    {
+        $this->asClient($this->client)->putJson('/api/client/updateProfile', [
+            'client_id' => $this->client->client_id,
+            'email' => 'New@Example.com',
+            'account_type' => 'dealer',
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'phone' => '+15550001',
+            'business_name' => 'BelforTech Group',
+            'registration_number' => 'CAC-123',
+        ])->assertOk()
+            ->assertJsonPath('data.business_name', 'BelforTech Group')
+            ->assertJsonPath('data.registration_number', 'CAC-123')
+            ->assertJsonPath('data.email', 'new@example.com');
+
+        $this->assertSame(hash('sha256', 'new@example.com'), $this->client->fresh()->hashed_email);
+    }
+
+    public function test_change_password_checks_current_password(): void
+    {
+        $payload = [
+            'client_id' => $this->client->client_id,
+            'current_password' => 'wrong-pass',
+            'password' => 'newsecret123',
+            'confirm_password' => 'newsecret123',
+        ];
+
+        $this->asClient($this->client)->putJson('/api/client/changePassword', $payload)->assertStatus(422);
+
+        $this->asClient($this->client)->putJson('/api/client/changePassword', ['current_password' => 'secret123'] + $payload)->assertOk();
+
+        $this->assertTrue(Hash::check('newsecret123', $this->client->fresh()->password));
+    }
+
+    public function test_profile_photo_upload_and_remove(): void
+    {
+        $this->asClient()->post('/api/media/uploadFiles', [
+            'uploadProtocol' => json_encode([
+                'target' => 'account',
+                'ref_id' => $this->client->client_id,
+                'upload_at' => '2026-11-04 10:31:00',
+            ]),
+            'account_img' => [UploadedFile::fake()->image('avatar.jpg')],
+        ])->assertOk();
+
+        $this->assertStringStartsWith('https://arianaautoservice.com/Files/account/Profiles/Img/', $this->client->fresh()->profile_img);
+        $this->assertSame(1, ClientFile::where('client_id', $this->client->client_id)->count());
+
+        $this->asClient($this->client)->deleteJson('/api/client/removeProfilePhoto', ['client_id' => $this->client->client_id])
+            ->assertOk()
+            ->assertJsonPath('data.profile_img', null);
+
+        $this->assertSame(0, ClientFile::where('client_id', $this->client->client_id)->count());
+    }
+
+    private function signIn(string $id, ?string $token = null): void
+    {
+        \App\Models\ClientSession::create([
+            'id' => 'ID_' . $id,
+            'client_id' => $this->client->client_id,
+            'session_id' => $id,
+            'payload' => '{}',
+            'last_activity' => time(),
+            'fcm_token' => $token,
+        ]);
+    }
+
+    private function fakeFirebase(): void
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_pkey_export($key, $pem);
+        $path = sys_get_temp_dir() . '/fcm-test-' . uniqid() . '.json';
+        file_put_contents($path, json_encode([
+            'project_id' => 'ariana-test',
+            'client_email' => 'push@ariana-test.iam.gserviceaccount.com',
+            'private_key' => $pem,
+            'token_uri' => 'https://oauth2.googleapis.com/token',
+        ]));
+        config(['services.fcm.credentials' => $path]);
+        \Illuminate\Support\Facades\Cache::forget('fcm_access_token');
+    }
+
+    public function test_booking_emails_follow_preferences(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $vehicle = $this->addVehicle();
+        $bookId = $this->book($vehicle)->assertCreated()->json('data.book_id');
+
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\BookingUpdateMail::class,
+            fn($mail) => $mail->hasTo('owner@example.com')
+                && str_starts_with($mail->subjectLine, 'Booking confirmed – ARN-')
+                && in_array(['Date & time', 'Thu, Nov 5, 2026, 8:00 AM'], $mail->details['rows'], true)
+        );
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'READY_FOR_PICKUP',
+            'note' => 'Bay 3, keys at the front desk',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\BookingUpdateMail::class,
+            fn($mail) => $mail->details['heading'] === 'Your car is ready for pickup'
+                && $mail->details['status'] === 'Ready for Pickup'
+                && $mail->details['note'] === 'Bay 3, keys at the front desk'
+                && collect($mail->details['progress'])->firstWhere('state', 'current')['label'] === 'Ready for Pickup'
+        );
+        $this->assertSame(2, \App\Models\ClientEmail::where('is_sent', true)->count());
+
+        $this->asClient($this->client)->putJson('/api/client/updatePreferences', [
+            'client_id' => $this->client->client_id,
+            'service_status_updates' => false,
+        ])->assertOk();
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'IN_PROGRESS',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSentCount(2);
+
+        $this->asClient($this->client)->putJson('/api/client/updatePreferences', [
+            'client_id' => $this->client->client_id,
+            'service_status_updates' => true,
+            'email_enabled' => false,
+        ])->assertOk();
+
+        $this->asStaff()->postJson('/api/team/setBookingState', [
+            'book_id' => $bookId,
+            'team_id' => 'TEAMTEST1',
+            'name' => 'COMPLETED',
+        ])->assertOk();
+
+        \Illuminate\Support\Facades\Mail::assertSentCount(2);
+    }
+
+    public function test_push_goes_to_signed_in_devices_and_drops_dead_tokens(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        $this->fakeFirebase();
+        $this->signIn('SESS_A', 'token-live');
+        $this->signIn('SESS_B', 'token-dead');
+        \Illuminate\Support\Facades\Http::fake([
+            'oauth2.googleapis.com/*' => \Illuminate\Support\Facades\Http::response(['access_token' => 'ya29.test']),
+            'fcm.googleapis.com/*' => function ($request) {
+                return $request['message']['token'] === 'token-dead'
+                    ? \Illuminate\Support\Facades\Http::response(['error' => ['status' => 'NOT_FOUND', 'details' => [['errorCode' => 'UNREGISTERED']]]], 404)
+                    : \Illuminate\Support\Facades\Http::response(['name' => 'projects/ariana-test/messages/1']);
+            },
+        ]);
+
+        $this->book($this->addVehicle())->assertCreated();
+
+        \Illuminate\Support\Facades\Http::assertSent(fn($request) => str_contains($request->url(), 'projects/ariana-test/messages:send')
+            && $request['message']['token'] === 'token-live'
+            && $request['message']['notification']['title'] === 'Booking Confirmed!'
+            && $request['message']['data']['type'] === 'booking_placed'
+            && $request->hasHeader('Authorization', 'Bearer ya29.test'));
+        $this->assertNull(\App\Models\ClientSession::where('session_id', 'SESS_B')->value('fcm_token'));
+        $this->assertSame('token-live', \App\Models\ClientSession::where('session_id', 'SESS_A')->value('fcm_token'));
+    }
+
+    public function test_no_push_without_firebase_credentials(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        config(['services.fcm.credentials' => '/nonexistent.json']);
+        $this->signIn('SESS_A', 'token-live');
+        \Illuminate\Support\Facades\Http::fake();
+
+        $this->book($this->addVehicle())->assertCreated();
+
+        \Illuminate\Support\Facades\Http::assertNothingSent();
+    }
+
+    public function test_push_token_moves_to_the_latest_session(): void
+    {
+        $this->signIn('SESS_OLD', 'shared-device');
+        $this->signIn('SESS_NEW');
+
+        $this->asClient($this->client)->putJson('/api/client/updatePushToken', [
+            'client_id' => $this->client->client_id,
+            'session_id' => 'SESS_NEW',
+            'fcm_token' => 'shared-device',
+        ])->assertOk();
+
+        $this->assertNull(\App\Models\ClientSession::where('session_id', 'SESS_OLD')->value('fcm_token'));
+        $this->assertSame('shared-device', \App\Models\ClientSession::where('session_id', 'SESS_NEW')->value('fcm_token'));
+
+        $this->asClient($this->client)->putJson('/api/client/updatePushToken', [
+            'client_id' => $this->client->client_id,
+            'session_id' => 'SESS_MISSING',
+            'fcm_token' => 'x',
+        ])->assertNotFound();
+    }
+}

@@ -1,0 +1,98 @@
+<?php
+
+namespace App\Models;
+
+use App\Models\Concerns\TracksPasswordChanges;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Tymon\JWTAuth\Contracts\JWTSubject;
+
+class Client extends Authenticatable implements JWTSubject
+{
+    use TracksPasswordChanges;
+
+    protected $fillable = [
+        'client_id',
+        'email',
+        'hashed_email',
+        'first_name',
+        'last_name',
+        'account_type',
+        'business_name',
+        'registration_number',
+        'email_verified_at',
+        'phone',
+        'state_id',
+        'password',
+        'profile_img',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+
+
+    public function files()
+    {
+        return $this->hasMany(ClientFile::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+    public function sessions()
+    {
+        return $this->hasMany(ClientSession::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
+    public function status()
+    {
+        return $this->hasMany(ClientStatus::class, 'state_id', 'state_id'); // vend_id is the foreign key
+    }
+
+    public function vehicles()
+    {
+        return $this->hasMany(Vehicle::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
+
+    public function notifications()
+    {
+        return $this->hasMany(ClientNotification::class, 'client_id', 'client_id');
+    }
+
+    public function preference()
+    {
+        return $this->hasOne(ClientPreference::class, 'client_id', 'client_id');
+    }
+
+    public function bookings()
+    {
+        return $this->hasMany(Booking::class, 'client_id', 'client_id'); // vend_id is the foreign key
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
+        ];
+    }
+
+    /**
+     * Get the identifier that will be stored in the JWT.
+     */
+    public function getJWTIdentifier()
+    {
+        return $this->getKey();
+    }
+
+    /**
+     * Custom claims to include in the JWT.
+     */
+    public function getJWTCustomClaims(): array
+    {
+        return [
+            'client_id' => $this->client_id,
+            'account_type' => $this->account_type,
+        ];
+    }
+}
+

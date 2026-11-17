@@ -1,0 +1,584 @@
+<?php
+
+namespace App\Helpers;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
+use App\Models\Client;
+use App\Models\ClientStatus;
+use Illuminate\Support\Facades\Hash;
+use App\Events\ClientRegistered;
+use App\Models\ClientSession;
+use App\Models\ClientFile;
+use Illuminate\Support\Facades\Storage;
+use Tymon\JWTAuth\Facades\JWTAuth;
+
+class ClientAuthHelper
+{
+    public static function register(Request $request): JsonResponse
+    {
+        try {
+
+            // Hash of the incoming email for checking duplicates
+            $emailHash = hash('sha256', $request->email);
+
+            // Check if user with same hashed email already exists
+            if (Client::where('hashed_email', $emailHash)->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email already exists'
+                ], 422);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | Generate Account ID
+            |--------------------------------------------------------------------------
+            */
+            $client_id = 'CLIENT' . strtoupper(Str::random(18));
+
+
+
+            /*
+            |--------------------------------------------------------------------------
+            | Create User
+            |--------------------------------------------------------------------------
+            */
+            $state_id = 'STATE_' . strtoupper(Str::random(15));
+
+            $user = Client::create([
+                'client_id' => $client_id,
+                'first_name' => $request->first_name,
+                'last_name' => $request->last_name,
+                'email' => $request->email,
+                'phone' => $request->phone,
+                'business_name' => $request->business_name ?? null,
+                'registration_number' => $request->registration_number ?? null,
+                'hashed_email' => $emailHash,
+                'state_id' => $state_id,
+                'account_type' => $request->account_type,
+                'password' => Hash::make($request->password),
+            ]);
+
+            if ($user) {
+                $state = ClientStatus::create([
+                    'client_id' => $client_id,
+                    'state_id' => $state_id,
+                    'name' => 'Active',
+                    'code' => 'ACTIVE421',
+                    'note' => 'Account approved',
+                ]);
+                //  Update user with state_id
+            }
+
+            if ($user) {
+                ClientRegistered::dispatch([
+                    'client_id' => $user->client_id,
+                    'email' => $user->email,
+                    'first_name' => $user->first_name,
+                    'last_name' => $user->last_name,
+                    'account_type' => $user->account_type,
+                    'sender_id' => 'SYSTEM-' . now()->format('Y-m-d-H-i-s'),
+                    'mail_id' => 'MAIL-' . strtoupper(Str::uuid()),
+                    'message' => 'Your registration has been successfully completed.',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Account created successfully',
+                'data' => [
+                    'client_id' => $user->client_id,
+                    'first_name' => $user->first_name,
+                    'last_name' => $user->last_name,
+                    'email' => $user->email,
+                    'account_type' => $user->account_type,
+                    'state' => [
+                        'state_id' => $state->state_id,
+                        'name' => $state->name,
+                        'code' => $state->code
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration failed',
+                'error' => $e->getMessage()
+            ], 500);
+
+        }
+    }
+
+
+    public static function login(Request $request, $otpVerified = false)
+    {
+        try {
+
+            $emailHash = hash('sha256', $request->email);
+            $user = Client::where('hashed_email', $emailHash)->first();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Account not found.'
+                ], 401);
+            }
+            $state = ClientStatus::where('state_id', $user->state_id)->first();
+
+
+            if (!$user || !Hash::check($request->password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid credentials'
+                ], 401);
+            }
+
+            if ($state && strtoupper((string) $state->code) === 'SUSPENDED') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Your account has been suspended. Please contact support.'
+                ], 403);
+            }
+
+
+
+            $expirationTime = now()->addDays(7);
+            $currentDeviceKey = md5($request->ip() . $request->header('User-Agent'));
+
+            $existingSessions = ClientSession::where('client_id', $user->client_id)->get();
+            $isFirstLogin = $existingSessions->isEmpty();
+
+            /*
+            |--------------------------------------------------------------------------
+            | 1️⃣ CHECK IF DEVICE SESSION EXISTS
+            |--------------------------------------------------------------------------
+            */
+
+            foreach ($existingSessions as $session) {
+
+                $payload = json_decode($session->payload, true);
+
+                if (!empty($payload['device_key']) && $payload['device_key'] === $currentDeviceKey) {
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | OTP STILL PENDING → REQUIRE OTP
+                    |--------------------------------------------------------------------------
+                    */
+
+                    if (!empty($payload['otp_pending']) && $payload['otp_pending'] === true) {
+
+                        $sessions = ClientSession::where('client_id', $user->client_id)->get();
+                        $fcmTokens = $sessions->pluck('fcm_token')->filter()->unique()->values()->toArray();
+                        if ($sessions && $fcmTokens) {
+
+
+
+
+                        }
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'OTP verification required for this device',
+                            'data' => [
+                                'user' => [
+                                    'client_id' => $user->client_id,
+                                    'first_name' => $user->first_name,
+                                    'last_name' => $user->last_name,
+                                    'email' => $user->email,
+                                    'account_type' => $user->account_type,
+                                    'state' => $state,
+                                ],
+                                'auth' => [
+                                    'session_id' => $session->session_id
+                                ]
+                            ]
+                        ], 403);
+                    }
+
+                    /*
+                    |--------------------------------------------------------------------------
+                    | DEVICE VERIFIED → ALLOW LOGIN
+                    |--------------------------------------------------------------------------
+                    */
+
+                    $token = JWTAuth::customClaims([
+                        'exp' => $expirationTime->timestamp
+                    ])->fromUser($user);
+
+                    $payload['access_token'] = $token;
+                    $payload['ip_address'] = $request->ip();
+                    $payload['user_agent'] = $request->header('User-Agent');
+
+                    $session->update([
+                        'payload' => json_encode($payload),
+                        'expires_at' => $expirationTime,
+                        'last_activity' => now()->timestamp
+                    ]);
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Session refreshed on this device',
+                        'data' => [
+                            'user' => [
+                                'client_id' => $user->client_id,
+                                'first_name' => $user->first_name,
+                                'last_name' => $user->last_name,
+                                'email' => $user->email,
+                                'account_type' => $user->account_type,
+                                'state' => $state,
+                            ],
+                            'auth' => [
+                                'access_token' => $token,
+                                'session_id' => $session->session_id
+                            ]
+                        ]
+                    ], 200);
+                }
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | 2️⃣ NEW DEVICE → REQUIRE OTP
+            |--------------------------------------------------------------------------
+            */
+
+            if (!$isFirstLogin && !$otpVerified) {
+                $sessions = ClientSession::where('client_id', $request->client_id)->get();
+
+                $fcmTokens = $sessions
+                    ->pluck('fcm_token')
+                    ->filter()
+                    ->unique()
+                    ->values()
+                    ->toArray();
+
+
+
+                $token = JWTAuth::customClaims([
+                    'exp' => $expirationTime->timestamp
+                ])->fromUser($user);
+
+                $session = ClientSession::create([
+                    'session_id' => 'SESS_' . strtoupper(Str::random(18)),
+                    'client_id' => $user->client_id,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->header('User-Agent'),
+                    'payload' => json_encode([
+                        'access_token' => $token,
+                        'device_key' => $currentDeviceKey,
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->header('User-Agent'),
+                        'otp_pending' => true
+                    ]),
+                    'fcm_token' => $request->fcm_token ?? null,
+                    'last_activity' => now()->timestamp,
+                    'expires_at' => $expirationTime
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OTP verification required',
+                    'data' => [
+                        'user' => [
+                            'client_id' => $user->client_id,
+                            'first_name' => $user->first_name,
+                            'last_name' => $user->last_name,
+                            'email' => $user->email,
+                            'account_type' => $user->account_type,
+                            'state' => $state,
+
+                        ],
+                        'auth' => [
+                            'session_id' => $session->session_id
+                        ]
+                    ]
+                ], 403);
+            }
+
+            /*
+            |--------------------------------------------------------------------------
+            | 3️⃣ FIRST LOGIN OR OTP VERIFIED
+            |--------------------------------------------------------------------------
+            */
+
+            $token = JWTAuth::customClaims([
+                'exp' => $expirationTime->timestamp
+            ])->fromUser($user);
+
+            $session = ClientSession::create([
+                'session_id' => 'SESS_' . strtoupper(Str::random(18)),
+                'client_id' => $user->client_id,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->header('User-Agent'),
+                'payload' => json_encode([
+                    'access_token' => $token,
+                    'device_key' => $currentDeviceKey,
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->header('User-Agent'),
+                    'otp_pending' => false
+                ]),
+                'fcm_token' => $request->fcm_token ?? null,
+                'last_activity' => now()->timestamp,
+                'expires_at' => $expirationTime
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Login successful',
+                'data' => [
+                    'user' => [
+                        'client_id' => $user->client_id,
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
+                        'email' => $user->email,
+                        'account_type' => $user->account_type,
+                        'state' => $state,
+
+                    ],
+                    'auth' => [
+                        'session_id' => $session->session_id,
+                        'access_token' => $token
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Login failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+    public static function reset_password(Request $request): JsonResponse
+    {
+        $email = strtolower((string) $request->email);
+
+        $user = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $email) {
+            $token = \App\Models\Otp::lockResetToken((string) $request->reset_token);
+            $user = $token ? Client::where('client_id', $token->acc_id)->first() : null;
+
+            if (!$user || ($email !== '' && $user->hashed_email !== hash('sha256', $email))) {
+                return null;
+            }
+
+            $token->markAsUsed();
+            $user->password = Hash::make($request->password);
+            $user->save();
+
+            return $user;
+        });
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your password reset has expired. Please request a new code.',
+            ], 403);
+        }
+
+        if ($user->email) {
+            AccountMailHelper::passwordChanged($user->email, $user->first_name);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password has been reset successfully'
+        ]);
+    }
+
+
+
+    public static function logout(Request $request)
+    {
+        try {
+            // 1. Invalidate the JWT Token (Add to blacklist)
+            // This ensures the token cannot be used even if it hasn't expired yet
+            if ($token = JWTAuth::getToken()) {
+                JWTAuth::invalidate($token);
+            }
+
+            // 2. Delete the Session from Database
+            $sessionId = $request->input('session_id');
+            $deleted = ClientSession::where('session_id', $sessionId)
+                ->where('client_id', $request->attributes->get('client')->client_id)
+                ->delete();
+
+            if (!$deleted) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session not found or already deleted'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Logged out successfully'
+            ], 200);
+
+        } catch (JWTException $e) {
+            // Even if JWT fails, we should try to finish the logout
+            return response()->json([
+                'success' => false,
+                'message' => 'Error during logout',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public static function getProfile(Request $request): JsonResponse
+    {
+        $client = Client::with(['status', 'sessions', 'files'])->where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $client,
+        ]);
+    }
+
+
+    public static function updateProfile(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $allowedFields = [
+            'email',
+            'account_type',
+            'first_name',
+            'last_name',
+            'phone',
+            'business_name',
+            'registration_number',
+        ];
+
+        // Get only allowed fields
+        $data = $request->only($allowedFields);
+
+        // Remove fields that are null or empty
+        $data = array_filter($data, function ($value) {
+            return $value !== null && $value !== '';
+        });
+
+        if (isset($data['email'])) {
+            $data['email'] = strtolower(trim($data['email']));
+
+            if ($data['email'] !== $client->email) {
+                $emailHash = hash('sha256', $data['email']);
+
+                if (Client::where('hashed_email', $emailHash)->where('client_id', '!=', $client->client_id)->exists()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This email is already in use.',
+                        'errors' => ['email' => ['This email is already in use.']],
+                    ], 422);
+                }
+
+                $data['hashed_email'] = $emailHash;
+            } else {
+                unset($data['email']);
+            }
+        }
+
+        if (isset($data['phone']) && $data['phone'] !== $client->phone
+            && Client::where('phone', $data['phone'])->where('client_id', '!=', $client->client_id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This phone number is already in use.',
+                'errors' => ['phone' => ['This phone number is already in use.']],
+            ], 422);
+        }
+
+        // Update only existing and non-empty fields
+        if (!empty($data)) {
+            $client->update($data);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile updated successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+
+    public static function changePassword(Request $request): JsonResponse
+    {
+        $client = $request->attributes->get('client');
+
+        if (!Hash::check($request->current_password, $client->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+                'errors' => ['current_password' => ['Current password is incorrect.']],
+            ], 422);
+        }
+
+        $client->password = Hash::make($request->password);
+        $client->save();
+
+        if ($client->email) {
+            AccountMailHelper::passwordChanged($client->email, $client->first_name);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password changed successfully.',
+            'data' => ['access_token' => $client->freshAccessToken()],
+        ], 200);
+    }
+
+
+    public static function removeProfilePhoto(Request $request): JsonResponse
+    {
+        $client = Client::where('client_id', $request->client_id)->first();
+
+        if (!$client) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Client not found.',
+            ], 404);
+        }
+
+        $photos = ClientFile::where('client_id', $client->client_id)
+            ->where('file_url', 'like', 'account/Profiles/Img/%')
+            ->get();
+
+        foreach ($photos as $photo) {
+            try {
+                Storage::disk('hostinger')->delete($photo->file_url);
+            } catch (\Throwable $e) {
+                \Log::warning('Remove Profile Photo: ' . $e->getMessage());
+            }
+
+            $photo->delete();
+        }
+
+        $client->update(['profile_img' => null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile photo removed successfully.',
+            'data' => $client->fresh(),
+        ], 200);
+    }
+}

@@ -1,8 +1,158 @@
 <?php
 
+use App\Http\Controllers\InboxController;
+use App\Http\Controllers\StaffController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ClientAuthController;
+use App\Http\Controllers\OtpController;
+use App\Http\Controllers\VehicleController;
+use App\Http\Controllers\FileUploadController;
+use App\Http\Controllers\BookingController;
+use App\Http\Controllers\TeamAuthController;
+use App\Http\Controllers\TeamStatisticController;
+use App\Http\Controllers\TeamController;
+use App\Http\Controllers\PublicController;
+use App\Http\Controllers\ServicesController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\SettingsController;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+
+//->middleware('verify.token')
+
+
+Route::prefix('public')->group(function () {
+    Route::post('/submitMessage', [PublicController::class, 'submitMessage']);
+});
+
+
+// Clients Authenticate & authorize Endpoints
+Route::prefix('client')->group(function () {
+    Route::post('/register', [ClientAuthController::class, 'register']);
+    Route::put('/reset_password', [ClientAuthController::class, 'reset_password']);
+    Route::post('/login', [ClientAuthController::class, 'login']);
+    Route::post('/logout', [ClientAuthController::class, 'logout'])->middleware('verify.client');
+    Route::get('/getServices', [BookingController::class, 'getServices']);
+    Route::put('/updateProfile', [ClientAuthController::class, 'updateProfile'])->middleware('verify.client:team');
+    Route::middleware('verify.client')->group(function () {
+        Route::get('/getProfile', [ClientAuthController::class, 'getProfile']);
+        Route::post('/requestAccountDeletion', [InboxController::class, 'requestAccountDeletion']);
+        Route::get('/getAccountDeletionRequest', [InboxController::class, 'getAccountDeletionRequest']);
+        Route::delete('/cancelAccountDeletionRequest', [InboxController::class, 'cancelAccountDeletionRequest']);
+        Route::put('/changePassword', [ClientAuthController::class, 'changePassword']);
+        Route::delete('/removeProfilePhoto', [ClientAuthController::class, 'removeProfilePhoto']);
+        Route::get('/getPreferences', [NotificationController::class, 'getPreferences']);
+        Route::put('/updatePreferences', [NotificationController::class, 'updatePreferences']);
+        Route::put('/updatePushToken', [NotificationController::class, 'updatePushToken']);
+    });
+});
+
+
+// Two Factor Authentication Endpoints
+Route::prefix('twoFactor')->group(function () {
+    Route::post('/generateOtp', [OtpController::class, 'generateOtp']);
+    Route::post('/verifyOtp', [OtpController::class, 'verifyOtp']);
+});
+
+
+// Vehicle Clients Endpoints
+Route::prefix('vehicles')->middleware('verify.client')->group(function () {
+    Route::get('/getVehicle', [VehicleController::class, 'getVehicle']);
+    Route::post('/addVehicle', [VehicleController::class, 'addVehicle']);
+    Route::put('/updateVehicle', [VehicleController::class, 'updateVehicle']);
+    Route::delete('/deleteVehicle', [VehicleController::class, 'deleteVehicle']);
+});
+
+
+// Media Upload Endpoints
+Route::prefix('media')->middleware('verify.client:team')->group(function () {
+    Route::post('/uploadFiles', [FileUploadController::class, 'uploadFiles']);
+});
+
+
+Route::prefix('booking')->middleware('verify.client')->group(function () {
+    Route::post('/addBooking', [BookingController::class, 'addBooking']);
+    Route::put('/updateBooking', [BookingController::class, 'updateBooking']);
+    Route::delete('/deleteBooking', [BookingController::class, 'deleteBooking']);
+    Route::get('/getClientBookings', [BookingController::class, 'getClientBookings']);
+    Route::get('/getAvailableSlots', [BookingController::class, 'getAvailableSlots']);
+    Route::get('/getDocumentRequirements', [SettingsController::class, 'getClientDocumentRequirements']);
+    Route::get('/getStatusPipelines', [SettingsController::class, 'getClientStatusPipelines']);
+});
+
+
+Route::prefix('notifications')->middleware('verify.client')->group(function () {
+    Route::get('/getNotifications', [NotificationController::class, 'getNotifications']);
+    Route::put('/markRead', [NotificationController::class, 'markRead']);
+});
+
+
+Route::prefix('teamAuth')->group(function () {
+    Route::post('/login', [TeamAuthController::class, 'login']);
+    Route::post('/logout', [TeamAuthController::class, 'logout']);
+    Route::middleware('verify.team')->group(function () {
+        Route::post('/reset_password', [TeamAuthController::class, 'reset_password']);
+        Route::get('/getProfile', [TeamAuthController::class, 'getProfile']);
+        Route::put('/updateProfile', [TeamAuthController::class, 'updateProfile']);
+    });
+});
+
+Route::prefix('team')->middleware('verify.team')->group(function () {
+    Route::get('/getStaff', [StaffController::class, 'getStaff']);
+    Route::get('/getContactMessages', [InboxController::class, 'getContactMessages']);
+    Route::put('/setContactMessageState', [InboxController::class, 'setContactMessageState']);
+    Route::post('/replyContactMessage', [InboxController::class, 'replyContactMessage']);
+    Route::get('/getAccountDeletionRequests', [InboxController::class, 'getAccountDeletionRequests']);
+
+    Route::middleware('verify.team:SUPER_ADMIN')->group(function () {
+        Route::post('/addStaff', [StaffController::class, 'addStaff']);
+        Route::put('/updateStaff', [StaffController::class, 'updateStaff']);
+        Route::put('/suspendStaff', [StaffController::class, 'suspendStaff']);
+        Route::put('/reactivateStaff', [StaffController::class, 'reactivateStaff']);
+        Route::put('/resetStaffPassword', [StaffController::class, 'resetStaffPassword']);
+        Route::delete('/deleteStaff', [StaffController::class, 'deleteStaff']);
+        Route::post('/approveAccountDeletion', [InboxController::class, 'approveAccountDeletion']);
+        Route::post('/rejectAccountDeletion', [InboxController::class, 'rejectAccountDeletion']);
+    });
+});
+
+Route::prefix('team')->middleware('verify.team')->group(function () {
+    Route::post('/getDashboard', [TeamStatisticController::class, 'getDashboard']);
+    Route::put('/setBookingFileState', [TeamController::class, 'setBookingFileState']);
+    Route::put('/setVehicleFileState', [TeamController::class, 'setVehicleFileState']);
+    Route::post('/getUsers', [TeamController::class, 'getUsers']);
+    Route::put('/suspendAccount', [TeamController::class, 'suspendAccount']);
+    Route::get('/getReportAnalytics', [TeamController::class, 'getReportAnalytics']);
+    Route::post('/addServices', [ServicesController::class, 'addServices']);
+    Route::put('/updateServices', [ServicesController::class, 'updateServices']);
+    Route::delete('/deleteServices', [ServicesController::class, 'deleteServices']);
+    Route::get('/getServices', [ServicesController::class, 'getServices']);
+    Route::post('/getBookings', [TeamController::class, 'getBookings']);
+    Route::post('/setBookingState', [TeamController::class, 'setBookingState']);
+    Route::post('/setVehicleState', [TeamController::class, 'setVehicleState']);
+    Route::post('/setBookingEta', [TeamController::class, 'setBookingEta']);
+    Route::get('/getTechnicians', [TeamController::class, 'getTechnicians']);
+    Route::post('/assignTechnician', [TeamController::class, 'assignTechnician']);
+    Route::post('/uploadBookingCertificate', [TeamController::class, 'uploadBookingCertificate']);
+    Route::put('/updateClient', [TeamController::class, 'updateClient']);
+    Route::put('/reactivateAccount', [TeamController::class, 'reactivateAccount']);
+
+    Route::get('/getAvailability', [SettingsController::class, 'getAvailability']);
+    Route::put('/updateAvailability', [SettingsController::class, 'updateAvailability']);
+    Route::get('/getDocumentRequirements', [SettingsController::class, 'getDocumentRequirements']);
+    Route::put('/updateDocumentRequirements', [SettingsController::class, 'updateDocumentRequirements']);
+    Route::get('/getStatusPipelines', [SettingsController::class, 'getStatusPipelines']);
+    Route::put('/updateStatusPipelines', [SettingsController::class, 'updateStatusPipelines']);
+    Route::get('/getNotificationSettings', [SettingsController::class, 'getNotificationSettings']);
+    Route::put('/updateNotificationSettings', [SettingsController::class, 'updateNotificationSettings']);
+});
+
+
+
+
+
+// Team Authenticate & authorize Endpoints
+
+
+// OTP Services Endpoints
+

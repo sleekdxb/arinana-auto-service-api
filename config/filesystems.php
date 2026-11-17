@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'upload_base_url' => rtrim(env('UPLOAD_BASE_URL', 'https://arianaautoservice.com/Files'), '/'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -41,10 +43,22 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/') . '/storage',
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
+        ],
+
+        'hostinger' => [
+            'driver' => 'ftp',
+            'host' => env('FTP_HOST'),
+            'username' => env('FTP_USERNAME'),
+            'password' => env('FTP_PASSWORD'),
+            'root' => '/public_html/Files/',
+            'port' => (int) env('FTP_PORT'),
+            'passive' => true,
+            'ssl' => false,
+            'timeout' => 30,
         ],
 
         's3' => [

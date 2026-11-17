@@ -1,0 +1,166 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Helpers\ClientAuthHelper;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\JsonResponse;
+class ClientAuthController extends Controller
+{
+    public function register(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|unique:clients,email',
+            'account_type' => 'required|string',
+            'first_name' => 'required|string',
+            'last_name' => 'required|string',
+            'phone' => 'required|string',
+            'password' => 'required|string|min:8',
+            'confirm_password' => 'required|string|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::register($request);
+    }
+
+
+
+    public function login(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email|exists:clients,email',
+            'password' => 'required|string|min:8',
+            'fcm_token' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::login($request);
+    }
+
+
+    public function reset_password(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'reset_token' => 'required|string',
+            'email' => 'nullable|string|email',
+            'password' => 'required|string|min:8',
+            'confirm_password' => 'required|string|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::reset_password($request);
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'session_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::logout($request);
+    }
+
+
+
+
+
+    public function getProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::getProfile($request);
+    }
+
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+            'email' => 'required|email',
+            'account_type' => 'required|string',
+            'first_name' => 'required|string',
+            'last_name' => 'required|string',
+            'phone' => 'required|string',
+            'business_name' => 'nullable|string',
+            'registration_number' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::updateProfile($request);
+    }
+
+    public function changePassword(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:8|different:current_password',
+            'confirm_password' => 'required|string|same:password',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::changePassword($request);
+    }
+
+    public function removeProfilePhoto(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'client_id' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        return ClientAuthHelper::removeProfilePhoto($request);
+    }
+}
