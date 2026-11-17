@@ -623,7 +623,6 @@ class ClientApiTest extends TestCase
     private function signIn(string $id, ?string $token = null): void
     {
         \App\Models\ClientSession::create([
-            'id' => 'ID_' . $id,
             'client_id' => $this->client->client_id,
             'session_id' => $id,
             'payload' => '{}',

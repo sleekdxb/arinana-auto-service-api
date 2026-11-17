@@ -45,7 +45,7 @@ return new class extends Migration {
 
 
         Schema::create('client_sessions', function (Blueprint $table) {
-            $table->string('id')->primary();
+            $table->id();
             $table->string('client_id')->index();
             $table->string('session_id')->index();
             $table->string('ip_address', 45)->nullable();
